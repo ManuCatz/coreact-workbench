@@ -27,7 +27,7 @@
       }
       #menu, #inspector {
         flex-shrink: 0;
-        width: 250px;
+        width: 270px;
         height: 800px;
         background-color: white;
         border: 1px solid #ccc;
@@ -37,13 +37,15 @@
       }
       #menu h2, #inspector h2 {
         margin-top: 0;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         border-bottom: 1px solid #eee;
-        padding-bottom: 10px;
+        padding-bottom: 8px;
+        margin-bottom: 10px;
       }
       #menu h3, #inspector h3 {
-        font-size: 1rem;
+        font-size: 0.95rem;
         color: #333;
+        margin-top: 10px;
         margin-bottom: 5px;
         display: flex;
         justify-content: space-between;
@@ -76,7 +78,7 @@
       
       /* Tree View Styles */
       .tree-node {
-        margin-left: 15px;
+        margin-left: 12px;
         line-height: 1.5;
         transition: opacity 0.3s ease;
       }
@@ -101,8 +103,16 @@
         color: #666;
       }
       .node-label {
-        font-size: 0.9em;
+        font-size: 0.85em;
         color: #2c3e50;
+      }
+      .layer-badge {
+        font-size: 0.75em;
+        background: #e0e0e0;
+        color: #555;
+        padding: 1px 4px;
+        border-radius: 3px;
+        margin-left: 4px;
       }
       .node-children {
         display: none;
@@ -128,6 +138,68 @@
       }
       .tree-node.empty > .node-header {
         cursor: default;
+      }
+      
+      /* Layer Tree Styles */
+      .layers-tree-container {
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px dashed #eee;
+      }
+      .layer-item {
+        margin-left: 10px;
+        margin-top: 4px;
+      }
+      .layer-item.root-layer {
+        margin-left: 0;
+      }
+      .layer-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 6px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        font-size: 0.8rem;
+      }
+      .layer-row.focused {
+        border-color: #3498db;
+        background-color: #ebf5fb;
+      }
+      .layer-title {
+        font-weight: 600;
+        color: #2c3e50;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .layer-btn {
+        padding: 2px 5px;
+        font-size: 0.7rem;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .layer-btn:hover {
+        background-color: #e2e6ea;
+      }
+      .layer-btn.focus-btn.active {
+        background-color: #f1c40f;
+        color: #000;
+        border-color: #f39c12;
+        font-weight: bold;
+      }
+      .layer-color-input {
+        width: 18px;
+        height: 18px;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        background: none;
       }
       
       /* Selection Highlight Styles */
@@ -180,7 +252,8 @@
         text-transform: capitalize;
       }
       .form-group input[type="text"],
-      .form-group input[type="number"] {
+      .form-group input[type="number"],
+      .form-group select {
         width: 100%;
         box-sizing: border-box;
         padding: 6px;
@@ -260,13 +333,23 @@
     <div id="app">
       <div id="menu">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; gap: 5px;">
-          <h2 style="margin: 0; border: none; padding: 0; font-size: 1rem;">Artefacts</h2>
+          <h2 style="margin: 0; border: none; padding: 0; font-size: 1rem;">Layers & Artefacts</h2>
           <div style="display: flex; gap: 4px;">
             <button id="load-script-btn" class="btn" style="padding: 4px 6px; font-size: 0.75rem; background-color: #3498db; color: white;" title="Load JS script to define sorts">Load Sorts</button>
-            <button id="clear-btn" class="btn btn-cancel" style="padding: 4px 6px; font-size: 0.75rem;" title="Clear all artefacts">Clear All</button>
+            <button id="clear-btn" class="btn btn-cancel" style="padding: 4px 6px; font-size: 0.75rem;" title="Clear all artefacts and layers">Clear All</button>
           </div>
           <input type="file" id="script-upload" accept=".js" style="display: none;" />
         </div>
+        
+        <div class="layers-tree-container">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <h3 style="margin: 0; font-size: 0.9rem; color: #555;">Layers Tree</h3>
+            <button id="add-root-layer-btn" class="layer-btn" title="Add new root layer">+ Root Layer</button>
+          </div>
+          <div id="layers-content"></div>
+        </div>
+
+        <h3 style="margin-top: 10px; font-size: 0.9rem; color: #555;">Artefacts</h3>
         <div id="menu-content"></div>
       </div>
       <svg id="canvas" width="800" height="800"></svg>

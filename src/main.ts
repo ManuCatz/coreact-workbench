@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing } from './index';
+import { SortStore, Drawing, Artefact, Layer } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -11,38 +11,53 @@ new Function('sortStore', 'd3', defaultSortsCode)(sortStore, d3);
 // 3. Create the Drawing instance
 const drawing = new Drawing(sortStore);
 
-console.log("Creating valid artefacts...");
+// Set up Layer Tree hierarchy for Demo
+// Root Layer ("root") is automatically initialized by Drawing
+const rootLayer = drawing.getLayer("root")!;
+rootLayer.name = "Root Layer";
+rootLayer.color = "#3498db";
+rootLayer.colorEnabled = false;
 
-// 4. Instantiate Artefacts (mimicking the pseudocode from the README)
-// We add some offsets to position to make them visible on the 800x600 canvas
-const v0 = drawing.newArtefact("Vertex", {}, { position: [200, 300], label: "v0" });
-const v1 = drawing.newArtefact("Vertex", {}, { position: [600, 300], label: "v1" });
-const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2" });
+// Child Layer 1 above Root Layer
+const layer1 = drawing.addLayer("layer-1", "Child Layer 1", "root", "#e74c3c", true);
 
-// Create edges connecting them
-drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" });
-drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, label: "e1" }); // Using the mono flag in dependencies!
-drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" });
+// Child Layer 2 above Child Layer 1
+const layer2 = drawing.addLayer("layer-2", "Child Layer 2", "layer-1", "#2ecc71", true);
+
+console.log("Creating valid artefacts with multi-layer support...");
+
+// 4. Instantiate Artefacts
+// Vertices in Root Layer
+const v0 = drawing.newArtefact("Vertex", {}, { position: [200, 300], label: "v0" }, "root");
+const v1 = drawing.newArtefact("Vertex", {}, { position: [600, 300], label: "v1" }, "root");
+const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2" }, "root");
+
+// Move edge e0 into the Root Layer (source & target v0, v1 are in Root)
+drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" }, "root");
+
+// Edges e1, e2 in Child Layer 1 (referencing Root Layer vertices v0, v1, v2)
+drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, label: "e1" }, "layer-1");
+drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" }, "layer-1");
 
 // --- Square Graph for Pullback Demo ---
-console.log("Creating square graph artefacts...");
+console.log("Creating square graph artefacts across layers...");
 
-// A separate square placed further down the canvas
-const sq_v0 = drawing.newArtefact("Vertex", {}, { position: [400, 400], label: "A" }); // Pullback object
-const sq_v1 = drawing.newArtefact("Vertex", {}, { position: [600, 400], label: "B" });
-const sq_v2 = drawing.newArtefact("Vertex", {}, { position: [400, 550], label: "C" });
-const sq_v3 = drawing.newArtefact("Vertex", {}, { position: [600, 550], label: "D" });
+// Square vertices in Root Layer
+const sq_v0 = drawing.newArtefact("Vertex", {}, { position: [400, 400], label: "A" }, "root");
+const sq_v1 = drawing.newArtefact("Vertex", {}, { position: [600, 400], label: "B" }, "root");
+const sq_v2 = drawing.newArtefact("Vertex", {}, { position: [400, 550], label: "C" }, "root");
+const sq_v3 = drawing.newArtefact("Vertex", {}, { position: [600, 550], label: "D" }, "root");
 
-const p1 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "p1" });
-const p2 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v2 }, { width: 2, label: "p2" });
-const q1 = drawing.newArtefact("Edge", { source: sq_v1, target: sq_v3 }, { width: 2, label: "q1" });
-const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width: 2, label: "q2" });
+// Projections p1, p2, q1, q2 in Child Layer 1
+const p1 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "p1" }, "layer-1");
+const p2 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v2 }, { width: 2, label: "p2" }, "layer-1");
+const q1 = drawing.newArtefact("Edge", { source: sq_v1, target: sq_v3 }, { width: 2, label: "q1" }, "layer-1");
+const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width: 2, label: "q2" }, "layer-1");
 
-// The Pullback artefact itself
-drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {});
+// The Pullback artefact itself in Child Layer 2 (referencing Layer 1 edges)
+drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {}, "layer-2");
 
-// 5. Draw the artefacts onto the D3 context
-// We select our canvas SVG element
+// 5. Canvas and interaction setup
 const svgContext = d3.select("#canvas");
 
 // Global Position Picker state
@@ -75,13 +90,7 @@ svgContext.on("click", (event: MouseEvent) => {
     }
 });
 
-// To draw edges behind vertices, it's a common D3 practice to use layer groups. 
-// However, according to our architecture, drawing.draw(context) will iterate sequentially.
-// Thus, to keep things strictly aligned with the class structure, we will just call draw().
-// Wait, if we added them in order (Vertices then Edges), edges will draw ON TOP of vertices in SVG.
-// To fix this simply, let's clear the SVG, then draw.
 svgContext.selectAll("*").remove();
-
 console.log("Drawing artefacts...");
 drawing.draw(svgContext);
 console.log("Drawing complete!");
@@ -103,10 +112,6 @@ try {
 }
 
 try {
-    // Note: passing v1 as 'target' is valid, but we need to trigger an error. Let's pass a Vertex where an Edge is expected.
-    // However, source/target expect Vertex. We will pass sq_v0 (Vertex) as target, which is valid.
-    // Actually, to fail, we should pass an Edge where a Vertex is expected, or missing target.
-    // We will just let it fail for missing 'target' if we only provide 'source'.
     drawing.newArtefact("Edge", { source: v0 }, { width: 4 });
 } catch (e) {
     console.error("Caught expected error for wrong dependency type:", (e as Error).message);
@@ -124,15 +129,25 @@ try {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
 }
 
-// 7. Render UI Menu & Interaction
-import { Artefact } from './index';
+// Hierarchy Check: Try creating an edge in "root" layer that depends on "p1" (which is in "layer-1")
+try {
+    drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "invalid_edge" }, "root");
+    // To trigger cross-layer failure, depend on p1 (which is in layer-1) from an artefact in root:
+    // But Edge expects Vertex dependencies. Let's create an edge in Root whose source is in Root, but target is in layer-1? Wait, sq_v0 is in root. If we had a vertex in layer-1, root couldn't use it!
+    const v_layer1 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "v_top" }, "layer-1");
+    drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, label: "illegal_edge" }, "root");
+} catch (e) {
+    console.error("Caught expected error for invalid layer hierarchy dependency:", (e as Error).message);
+}
 
+// 7. Render UI Menu & Interaction
 let inspectedArtefact: Artefact | null = null;
 
 let draftArtefact: {
     sortName: string;
     dependencies: Record<string, Artefact | boolean>;
     data: Record<string, any>;
+    layerId: string;
 } | null = null;
 
 let dependencyPickingFor: string | null = null;
@@ -146,7 +161,6 @@ function updateCanvas(): void {
         if (sortDef) {
             let canPreview = true;
 
-            // Check non-flag dependencies
             for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
                 if (expectedSort !== "flag") {
                     if (!draftArtefact.dependencies[depKey]) {
@@ -156,7 +170,6 @@ function updateCanvas(): void {
                 }
             }
 
-            // Check required attributes
             for (const [attrName, _] of Object.entries(sortDef.attributes)) {
                 if (draftArtefact.data[attrName] === undefined) {
                     canPreview = false;
@@ -170,7 +183,8 @@ function updateCanvas(): void {
                         draftArtefact.sortName,
                         draftArtefact.dependencies,
                         draftArtefact.data,
-                        sortDef.drawFunction
+                        sortDef.drawFunction,
+                        draftArtefact.layerId
                     );
                     tempArt.draw(svgContext);
                     if (tempArt.svgElement) {
@@ -184,6 +198,143 @@ function updateCanvas(): void {
     }
 }
 
+function renderLayersTree(): void {
+    const container = document.getElementById("layers-content");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const allLayers = drawing.getAllLayers();
+    const focusedId = drawing.getFocusedLayerId();
+    const rootLayers = allLayers.filter(l => l.parentId === null);
+
+    function buildLayerDOM(layer: Layer): HTMLElement {
+        const itemDiv = document.createElement("div");
+        itemDiv.className = `layer-item ${layer.parentId === null ? "root-layer" : ""}`;
+
+        const rowDiv = document.createElement("div");
+        rowDiv.className = `layer-row ${focusedId === layer.id ? "focused" : ""}`;
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "layer-title";
+        titleSpan.textContent = layer.name;
+        titleSpan.title = `ID: ${layer.id}`;
+
+        const focusBtn = document.createElement("button");
+        focusBtn.className = `layer-btn focus-btn ${focusedId === layer.id ? "active" : ""}`;
+        focusBtn.textContent = focusedId === layer.id ? "Focusing" : "Focus";
+        focusBtn.title = "Focus on this layer (dims other layers to 50% opacity)";
+        focusBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (focusedId === layer.id) {
+                drawing.setFocusedLayer(null);
+            } else {
+                drawing.setFocusedLayer(layer.id);
+            }
+            updateCanvas();
+            renderLayersTree();
+            renderMenu();
+        });
+
+        const colorCheckbox = document.createElement("input");
+        colorCheckbox.type = "checkbox";
+        colorCheckbox.checked = layer.colorEnabled;
+        colorCheckbox.title = "Toggle partial layer color";
+        colorCheckbox.addEventListener("change", (e) => {
+            layer.colorEnabled = (e.target as HTMLInputElement).checked;
+            updateCanvas();
+            renderLayersTree();
+        });
+
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.className = "layer-color-input";
+        colorInput.value = layer.color;
+        colorInput.title = "Choose layer color";
+        colorInput.addEventListener("change", (e) => {
+            layer.color = (e.target as HTMLInputElement).value;
+            layer.colorEnabled = true;
+            colorCheckbox.checked = true;
+            updateCanvas();
+            renderLayersTree();
+        });
+
+        const addChildBtn = document.createElement("button");
+        addChildBtn.className = "layer-btn";
+        addChildBtn.textContent = "+ Child";
+        addChildBtn.title = `Add a child layer above '${layer.name}'`;
+        addChildBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const childName = prompt(`Enter name for child layer above '${layer.name}':`, `Child of ${layer.name}`);
+            if (childName && childName.trim()) {
+                const childId = `layer-${Date.now().toString(36)}`;
+                const randomColor = `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`;
+                drawing.addLayer(childId, childName.trim(), layer.id, randomColor, true);
+                updateCanvas();
+                renderLayersTree();
+                renderInspector();
+            }
+        });
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "layer-btn";
+        deleteBtn.style.color = "#e74c3c";
+        deleteBtn.textContent = "×";
+        deleteBtn.title = "Delete layer and all its child layers & artefacts";
+        deleteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const descendants = drawing.getDescendants(layer.id);
+            const msg = descendants.size > 1 
+                ? `Delete '${layer.name}' and its ${descendants.size - 1} child layer(s)? All associated artefacts will be removed!`
+                : `Delete layer '${layer.name}'?`;
+            if (confirm(msg)) {
+                drawing.removeLayer(layer.id);
+                updateCanvas();
+                renderLayersTree();
+                renderMenu();
+                renderInspector();
+            }
+        });
+
+        rowDiv.appendChild(titleSpan);
+        rowDiv.appendChild(focusBtn);
+        rowDiv.appendChild(colorCheckbox);
+        rowDiv.appendChild(colorInput);
+        rowDiv.appendChild(addChildBtn);
+        rowDiv.appendChild(deleteBtn);
+        itemDiv.appendChild(rowDiv);
+
+        const children = allLayers.filter(l => l.parentId === layer.id);
+        if (children.length > 0) {
+            const childrenContainer = document.createElement("div");
+            childrenContainer.className = "layer-children";
+            for (const child of children) {
+                childrenContainer.appendChild(buildLayerDOM(child));
+            }
+            itemDiv.appendChild(childrenContainer);
+        }
+
+        return itemDiv;
+    }
+
+    for (const rootL of rootLayers) {
+        container.appendChild(buildLayerDOM(rootL));
+    }
+}
+
+const addRootLayerBtn = document.getElementById("add-root-layer-btn");
+if (addRootLayerBtn) {
+    addRootLayerBtn.addEventListener("click", () => {
+        const name = prompt("Enter name for new root layer:", "New Root Layer");
+        if (name && name.trim()) {
+            const id = `layer-${Date.now().toString(36)}`;
+            drawing.addLayer(id, name.trim(), null, "#9b59b6", true);
+            updateCanvas();
+            renderLayersTree();
+            renderInspector();
+        }
+    });
+}
+
 function renderMenu(): void {
     const menuContent = document.getElementById("menu-content");
     if (!menuContent) return;
@@ -191,20 +342,17 @@ function renderMenu(): void {
     menuContent.innerHTML = "";
     const allArtefacts = drawing.getArtefacts();
     
-    // Map to track UI elements associated with each artefact for dimming
     const uiNodeMap = new Map<Artefact, HTMLElement[]>();
     for (const art of allArtefacts) {
         uiNodeMap.set(art, []);
     }
     
-    // Group by sortName
     const grouped = allArtefacts.reduce((acc, artefact) => {
         if (!acc[artefact.sortName]) acc[artefact.sortName] = [];
         acc[artefact.sortName].push(artefact);
         return acc;
     }, {} as Record<string, typeof allArtefacts>);
 
-    // Helper to apply 50% opacity to irrelevant artefacts and UI elements
     function applyOpacities(target: Artefact | null) {
         if (!target) {
             for (const art of allArtefacts) {
@@ -239,7 +387,6 @@ function renderMenu(): void {
         }
     }
 
-    // Recursive function to build the tree DOM
     function buildTreeNode(artefact: Artefact, dependencyKey?: string, isTagGroupCtx?: string): HTMLElement {
         const nodeDiv = document.createElement("div");
         nodeDiv.className = "tree-node";
@@ -264,7 +411,6 @@ function renderMenu(): void {
         
         let artefactLabel = artefact.data.label || "(unnamed)";
         
-        // Extract and append true boolean flags to the label
         const activeFlags = Object.entries(artefact.dependencies)
             .filter(([_, val]) => val === true)
             .map(([key, _]) => key);
@@ -275,6 +421,11 @@ function renderMenu(): void {
 
         const prefix = dependencyKey ? `${dependencyKey}: ` : "";
         labelSpan.textContent = `${prefix}${artefactLabel}`;
+
+        const layerObj = drawing.getLayer(artefact.layerId);
+        const layerBadge = document.createElement("span");
+        layerBadge.className = "layer-badge";
+        layerBadge.textContent = layerObj ? layerObj.name : artefact.layerId;
         
         const removeBtn = document.createElement("span");
         removeBtn.className = "remove-btn";
@@ -283,10 +434,10 @@ function renderMenu(): void {
 
         headerDiv.appendChild(toggleIcon);
         headerDiv.appendChild(labelSpan);
+        headerDiv.appendChild(layerBadge);
         headerDiv.appendChild(removeBtn);
         nodeDiv.appendChild(headerDiv);
 
-        // Register this UI node for the artefact
         const uiNodes = uiNodeMap.get(artefact);
         if (uiNodes) {
             uiNodes.push(nodeDiv);
@@ -296,7 +447,6 @@ function renderMenu(): void {
             nodeDiv.classList.add("inspected");
         }
 
-        // Remove button action
         removeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (isTagGroupCtx) {
@@ -304,12 +454,10 @@ function renderMenu(): void {
             } else {
                 drawing.removeArtefact(artefact);
             }
-            // Redraw Canvas & UI
             updateCanvas();
             renderMenu();
         });
 
-        // Interaction Logic (Click to Inspect or Pick Dependency)
         labelSpan.addEventListener("click", (e) => {
             e.stopPropagation();
 
@@ -340,7 +488,6 @@ function renderMenu(): void {
             renderInspector();
         });
 
-        // Interaction Logic (Hover)
         labelSpan.addEventListener("mouseenter", () => {
             if (!inspectedArtefact) {
                 applyOpacities(artefact);
@@ -367,13 +514,11 @@ function renderMenu(): void {
             const childrenDiv = document.createElement("div");
             childrenDiv.className = "node-children";
             
-            // 1. Render Artefact dependencies
             for (const [key, depArt] of depEntries) {
                 const childNode = buildTreeNode(depArt, key);
                 childrenDiv.appendChild(childNode);
             }
 
-            // 2. Render Flag dependencies (tags) as child nodes
             for (const [flagKey, _] of flagEntries) {
                 const flagNodeDiv = document.createElement("div");
                 flagNodeDiv.className = "tree-node empty";
@@ -410,7 +555,6 @@ function renderMenu(): void {
 
             nodeDiv.appendChild(childrenDiv);
 
-            // Toggle logic (click anywhere on header except the label)
             toggleIcon.addEventListener("click", (e) => {
                 e.stopPropagation();
                 nodeDiv.classList.toggle("expanded");
@@ -420,7 +564,6 @@ function renderMenu(): void {
         return nodeDiv;
     }
 
-    // Render the groups for all registered sorts
     for (const sortDef of sortStore.getAllSorts()) {
         const artefacts = grouped[sortDef.name] || [];
         const groupHeader = document.createElement("h3");
@@ -437,7 +580,6 @@ function renderMenu(): void {
             e.stopPropagation();
             inspectedArtefact = null;
 
-            // Default attribute values for creation draft
             const initialData: Record<string, any> = {};
             for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
                 if (expectedType === "position") {
@@ -451,10 +593,14 @@ function renderMenu(): void {
                 }
             }
 
+            const allLayers = drawing.getAllLayers();
+            const defaultLayerId = allLayers.length > 0 ? allLayers[0].id : "root";
+
             draftArtefact = {
                 sortName: sortDef.name,
                 dependencies: {},
-                data: initialData
+                data: initialData,
+                layerId: defaultLayerId
             };
             dependencyPickingFor = null;
             renderMenu();
@@ -473,7 +619,6 @@ function renderMenu(): void {
         }
     }
 
-    // Render Tag Groups (e.g. "mono")
     const tagGroups: Record<string, Artefact[]> = {};
     for (const artefact of allArtefacts) {
         for (const [key, val] of Object.entries(artefact.dependencies)) {
@@ -496,11 +641,11 @@ function renderMenu(): void {
         }
     }
 
-    // Apply opacities based on active selection
     applyOpacities(inspectedArtefact);
 }
 
 // Initial UI Render
+renderLayersTree();
 renderMenu();
 renderInspector();
 
@@ -508,7 +653,7 @@ renderInspector();
 const clearBtn = document.getElementById("clear-btn");
 if (clearBtn) {
     clearBtn.addEventListener("click", () => {
-        if (confirm("Are you sure you want to clear the entire drawing?")) {
+        if (confirm("Are you sure you want to clear all artefacts and layers?")) {
             drawing.clear();
             inspectedArtefact = null;
             draftArtefact = null;
@@ -518,6 +663,7 @@ if (clearBtn) {
                 d3.select("body").style("cursor", "default");
             }
             updateCanvas();
+            renderLayersTree();
             renderMenu();
             renderInspector();
         }
@@ -546,7 +692,6 @@ if (loadScriptBtn && scriptUpload) {
             if (!code) return;
 
             try {
-                // Clear existing sorts and drawing
                 sortStore.clear();
                 drawing.clear();
                 inspectedArtefact = null;
@@ -557,12 +702,11 @@ if (loadScriptBtn && scriptUpload) {
                     d3.select("body").style("cursor", "default");
                 }
 
-                // Execute the user's uploaded script with sortStore and d3 injected
                 const executor = new Function('sortStore', 'd3', code);
                 executor(sortStore, d3);
 
-                // Refresh UI and Canvas
                 updateCanvas();
+                renderLayersTree();
                 renderMenu();
                 renderInspector();
 
@@ -599,6 +743,25 @@ function renderInspector() {
         inspectorContent.appendChild(h3);
 
         const form = document.createElement("div");
+
+        // 0. Layer Selection
+        const layerGroup = document.createElement("div");
+        layerGroup.className = "form-group";
+        layerGroup.innerHTML = `<label>Layer</label>`;
+        const layerSelect = document.createElement("select");
+        for (const l of drawing.getAllLayers()) {
+            const opt = document.createElement("option");
+            opt.value = l.id;
+            opt.textContent = l.name;
+            if (l.id === draftArtefact.layerId) opt.selected = true;
+            layerSelect.appendChild(opt);
+        }
+        layerSelect.addEventListener("change", (e) => {
+            draftArtefact!.layerId = (e.target as HTMLSelectElement).value;
+            triggerDraftUpdate();
+        });
+        layerGroup.appendChild(layerSelect);
+        form.appendChild(layerGroup);
 
         // 1. Dependencies Section
         const nonFlagDeps = Object.entries(sortDef.dependencies).filter(([_, expected]) => expected !== "flag");
@@ -836,7 +999,6 @@ function renderInspector() {
             updateCanvas();
         });
 
-        // Validate check
         let isValid = true;
         for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
             if (expectedSort !== "flag" && !draftArtefact.dependencies[depKey]) {
@@ -863,7 +1025,8 @@ function renderInspector() {
                     drawing.newArtefact(
                         draftArtefact!.sortName,
                         draftArtefact!.dependencies,
-                        draftArtefact!.data
+                        draftArtefact!.data,
+                        draftArtefact!.layerId
                     );
                     draftArtefact = null;
                     dependencyPickingFor = null;
@@ -893,23 +1056,46 @@ function renderInspector() {
     const sortDef = sortStore.getSort(inspectedArtefact.sortName);
     if (!sortDef) return;
 
-    // Header
     const h3 = document.createElement("h3");
     h3.textContent = inspectedArtefact.sortName;
     h3.style.marginTop = "0";
     inspectorContent.appendChild(h3);
 
-    // Helper to redraw on change
     const triggerUpdate = () => {
         svgContext.selectAll("*").remove();
         drawing.draw(svgContext);
         renderMenu();
     };
 
-    // Build form fields
     const form = document.createElement("div");
 
-    // 1. Label Field (Optional string)
+    // 0. Layer Selector
+    const layerGroup = document.createElement("div");
+    layerGroup.className = "form-group";
+    layerGroup.innerHTML = `<label>Layer</label>`;
+    const layerSelect = document.createElement("select");
+    for (const l of drawing.getAllLayers()) {
+        const opt = document.createElement("option");
+        opt.value = l.id;
+        opt.textContent = l.name;
+        if (l.id === inspectedArtefact.layerId) opt.selected = true;
+        layerSelect.appendChild(opt);
+    }
+    layerSelect.addEventListener("change", (e) => {
+        const newLayerId = (e.target as HTMLSelectElement).value;
+        try {
+            drawing.setArtefactLayer(inspectedArtefact!, newLayerId);
+            triggerUpdate();
+            renderInspector();
+        } catch (err) {
+            alert((err as Error).message);
+            layerSelect.value = inspectedArtefact!.layerId;
+        }
+    });
+    layerGroup.appendChild(layerSelect);
+    form.appendChild(layerGroup);
+
+    // 1. Label Field
     const labelGroup = document.createElement("div");
     labelGroup.className = "form-group";
     labelGroup.innerHTML = `<label>Label</label>`;
@@ -1045,7 +1231,7 @@ function renderInspector() {
         form.appendChild(group);
     }
 
-    // 3. Flags (Fake Dependencies)
+    // 3. Flags
     const flagDependencies = Object.entries(sortDef.dependencies).filter(([_, expectedSort]) => expectedSort === "flag");
     
     if (flagDependencies.length > 0) {
@@ -1063,7 +1249,6 @@ function renderInspector() {
             
             const input = document.createElement("input");
             input.type = "checkbox";
-            // Check if it's explicitly set to true in dependencies
             input.checked = inspectedArtefact.dependencies[flagKey] === true;
             
             const label = document.createElement("label");
