@@ -257,3 +257,77 @@ try {
 } catch (e) {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
 }
+
+// 7. Render UI Menu
+import { Artefact } from './index';
+
+const menuContent = document.getElementById("menu-content");
+if (menuContent) {
+    const allArtefacts = drawing.getArtefacts();
+    
+    // Group by sortName
+    const grouped = allArtefacts.reduce((acc, artefact) => {
+        if (!acc[artefact.sortName]) acc[artefact.sortName] = [];
+        acc[artefact.sortName].push(artefact);
+        return acc;
+    }, {} as Record<string, typeof allArtefacts>);
+
+    // Recursive function to build the tree DOM
+    function buildTreeNode(artefact: Artefact, dependencyKey?: string): HTMLElement {
+        const nodeDiv = document.createElement("div");
+        nodeDiv.className = "tree-node";
+        
+        const headerDiv = document.createElement("div");
+        headerDiv.className = "node-header";
+        
+        const toggleIcon = document.createElement("span");
+        toggleIcon.className = "toggle-icon";
+        
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "node-label";
+        
+        const artefactLabel = artefact.data.label || "(unnamed)";
+        const prefix = dependencyKey ? `${dependencyKey}: ` : "";
+        labelSpan.textContent = `${prefix}${artefactLabel}`;
+        
+        headerDiv.appendChild(toggleIcon);
+        headerDiv.appendChild(labelSpan);
+        nodeDiv.appendChild(headerDiv);
+
+        const depEntries = Object.entries(artefact.dependencies);
+        
+        if (depEntries.length === 0) {
+            nodeDiv.classList.add("empty");
+        } else {
+            const childrenDiv = document.createElement("div");
+            childrenDiv.className = "node-children";
+            
+            for (const [key, depArt] of depEntries) {
+                const childNode = buildTreeNode(depArt, key);
+                childrenDiv.appendChild(childNode);
+            }
+            nodeDiv.appendChild(childrenDiv);
+
+            // Toggle logic
+            headerDiv.addEventListener("click", (e) => {
+                e.stopPropagation();
+                nodeDiv.classList.toggle("expanded");
+            });
+        }
+
+        return nodeDiv;
+    }
+
+    // Render the groups
+    for (const [sortName, artefacts] of Object.entries(grouped)) {
+        const groupHeader = document.createElement("h3");
+        groupHeader.textContent = `${sortName} (${artefacts.length})`;
+        menuContent.appendChild(groupHeader);
+
+        for (const art of artefacts) {
+            const rootNode = buildTreeNode(art);
+            rootNode.classList.add("root-node");
+            menuContent.appendChild(rootNode);
+        }
+    }
+}

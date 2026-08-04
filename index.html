@@ -12,16 +12,96 @@
         align-items: center;
         height: 100vh;
         background-color: #f0f0f0;
+        font-family: sans-serif;
+      }
+      #app {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+        max-height: 90vh;
+      }
+      #menu {
+        width: 250px;
+        height: 800px;
+        background-color: white;
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        padding: 15px;
+        overflow-y: auto;
+      }
+      #menu h2 {
+        margin-top: 0;
+        font-size: 1.2rem;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 10px;
+      }
+      #menu h3 {
+        font-size: 1rem;
+        color: #333;
+        margin-bottom: 5px;
       }
       #canvas {
         background-color: white;
         border: 1px solid #ccc;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       }
+      
+      /* Tree View Styles */
+      .tree-node {
+        margin-left: 15px;
+        line-height: 1.5;
+      }
+      .tree-node.root-node {
+        margin-left: 0;
+      }
+      .node-header {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+      }
+      .node-header:hover {
+        background-color: #f9f9f9;
+      }
+      .toggle-icon {
+        display: inline-block;
+        width: 15px;
+        text-align: center;
+        margin-right: 5px;
+        font-size: 0.8em;
+        color: #666;
+      }
+      .node-label {
+        font-size: 0.9em;
+        color: #2c3e50;
+      }
+      .node-children {
+        display: none;
+      }
+      .tree-node.expanded > .node-children {
+        display: block;
+      }
+      .tree-node.expanded > .node-header > .toggle-icon::before {
+        content: "▼";
+      }
+      .tree-node > .node-header > .toggle-icon::before {
+        content: "▶";
+      }
+      .tree-node.empty > .node-header > .toggle-icon::before {
+        content: "•";
+        color: #ccc;
+      }
+      .tree-node.empty > .node-header {
+        cursor: default;
+      }
     </style>
   </head>
   <body>
     <div id="app">
+      <div id="menu">
+        <h2>Artefacts Menu</h2>
+        <div id="menu-content"></div>
+      </div>
       <svg id="canvas" width="800" height="800"></svg>
     </div>
     <script type="module" src="/src/main.ts"></script>

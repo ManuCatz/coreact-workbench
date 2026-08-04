@@ -179,4 +179,8 @@ export class Drawing {
             artefact.draw(context);
         }
     }
+
+    getArtefacts(): Artefact[] {
+        return this.artefacts;
+    }
 }
