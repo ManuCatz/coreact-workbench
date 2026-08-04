@@ -76,15 +76,16 @@ export class Artefact {
         private drawFunction: (data: any, context: any) => void
     ) {}
 
-    draw(context: any): void {
-        const combinedData = { ...this.data };
-        
-        // Add dependency data objects to the combined data
+    getResolvedData(): any {
+        const result = { ...this.data };
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
-            combinedData[key] = depArtefact.data;
+            result[key] = depArtefact.getResolvedData();
         }
+        return result;
+    }
 
-        this.drawFunction(combinedData, context);
+    draw(context: any): void {
+        this.drawFunction(this.getResolvedData(), context);
     }
 }
 

@@ -119,7 +119,62 @@ sortStore
                 .attr("fill", "#2c3e50");
         }
     )
-    .newFlag("mono", "Edge");
+    .newFlag("mono", "Edge")
+    .newSort(
+        "Pullback",
+        { p1: "Edge", p2: "Edge", q1: "Edge", q2: "Edge" },
+        {},
+        (data: any, context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
+            // Assume p1 and p2 share the pullback source vertex
+            const V = data.p1.source.position;
+            const T1 = data.p1.target.position;
+            const T2 = data.p2.target.position;
+
+            const L = 15; // Length of corner legs
+            
+            // Calculate normalized direction vectors
+            const dx1 = T1[0] - V[0];
+            const dy1 = T1[1] - V[1];
+            const len1 = Math.sqrt(dx1*dx1 + dy1*dy1);
+            const ux1 = dx1 / len1;
+            const uy1 = dy1 / len1;
+
+            const dx2 = T2[0] - V[0];
+            const dy2 = T2[1] - V[1];
+            const len2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+            const ux2 = dx2 / len2;
+            const uy2 = dy2 / len2;
+
+            // distance from the center of the vertex
+            const offset = 25; 
+            // size of the pullback corner legs
+            const size = 15; 
+
+            // Base point (shifted away from the vertex circle along both vectors)
+            const baseX = V[0] + ux1 * offset + ux2 * offset;
+            const baseY = V[1] + uy1 * offset + uy2 * offset;
+
+            // The three points of the corner (inward pointing)
+            const pnt1 = [baseX + ux1 * size, baseY]; // Point on Leg 1 (Wait, need proper vector addition)
+            
+            // Re-calculate points strictly using the unit vectors for arbitrary angles
+            const p1x = V[0] + ux1 * offset + ux2 * (offset + size);
+            const p1y = V[1] + uy1 * offset + uy2 * (offset + size);
+            
+            const p2x = V[0] + ux1 * (offset + size) + ux2 * (offset + size);
+            const p2y = V[1] + uy1 * (offset + size) + uy2 * (offset + size); // The innermost corner
+            
+            const p3x = V[0] + ux1 * (offset + size) + ux2 * offset;
+            const p3y = V[1] + uy1 * (offset + size) + uy2 * offset;
+
+            context.append("path")
+                .attr("d", `M ${p1x},${p1y} L ${p2x},${p2y} L ${p3x},${p3y}`)
+                .attr("fill", "none")
+                .attr("stroke", "#333")
+                .attr("stroke-width", 2)
+                .attr("stroke-linejoin", "miter");
+        }
+    );
 
 // 3. Create the Drawing instance
 const drawing = new Drawing(sortStore);
@@ -136,6 +191,23 @@ const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2"
 const e0 = drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" });
 const e1 = drawing.newArtefact("Edge", { source: v1, target: v2 }, { width: 2, label: "e1", mono: true }); // Using the mono flag!
 const e2 = drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" });
+
+// --- Square Graph for Pullback Demo ---
+console.log("Creating square graph artefacts...");
+
+// A separate square placed further down the canvas
+const sq_v0 = drawing.newArtefact("Vertex", {}, { position: [400, 400], label: "A" }); // Pullback object
+const sq_v1 = drawing.newArtefact("Vertex", {}, { position: [600, 400], label: "B" });
+const sq_v2 = drawing.newArtefact("Vertex", {}, { position: [400, 550], label: "C" });
+const sq_v3 = drawing.newArtefact("Vertex", {}, { position: [600, 550], label: "D" });
+
+const p1 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "p1" });
+const p2 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v2 }, { width: 2, label: "p2" });
+const q1 = drawing.newArtefact("Edge", { source: sq_v1, target: sq_v3 }, { width: 2, label: "q1" });
+const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width: 2, label: "q2" });
+
+// The Pullback artefact itself
+drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {});
 
 // 5. Draw the artefacts onto the D3 context
 // We select our canvas SVG element
