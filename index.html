@@ -45,6 +45,27 @@
         font-size: 1rem;
         color: #333;
         margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .add-sort-btn {
+        background-color: #2ecc71;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        width: 22px;
+        height: 22px;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        transition: background-color 0.2s;
+      }
+      .add-sort-btn:hover {
+        background-color: #27ae60;
       }
       #canvas {
         flex-shrink: 0;
@@ -184,17 +205,54 @@
         flex: 1;
         width: 0; /* Allow flex to shrink properly */
       }
-      .pick-btn {
-        padding: 0 8px;
+      .pick-btn, .pick-dep-btn {
+        padding: 4px 8px;
         border: 1px solid #ccc;
         background-color: #f8f9f9;
         border-radius: 3px;
         cursor: pointer;
-        font-size: 0.95rem;
-        transition: background-color 0.2s;
+        font-size: 0.85rem;
+        transition: background-color 0.2s, border-color 0.2s;
       }
-      .pick-btn:hover {
+      .pick-btn:hover, .pick-dep-btn:hover {
         background-color: #e5e8e8;
+      }
+      .pick-dep-btn.active {
+        background-color: #aed6f1;
+        border-color: #3498db;
+        font-weight: bold;
+      }
+      .action-btns {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .btn {
+        flex: 1;
+        padding: 8px 12px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 0.9rem;
+      }
+      .btn-cancel {
+        background-color: #e74c3c;
+        color: white;
+      }
+      .btn-cancel:hover {
+        background-color: #c0392b;
+      }
+      .btn-validate {
+        background-color: #3498db;
+        color: white;
+      }
+      .btn-validate:hover:not(:disabled) {
+        background-color: #2980b9;
+      }
+      .btn-validate:disabled {
+        background-color: #bdc3c7;
+        cursor: not-allowed;
       }
     </style>
   </head>

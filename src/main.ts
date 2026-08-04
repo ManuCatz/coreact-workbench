@@ -231,9 +231,9 @@ svgContext.on("click", (event: MouseEvent) => {
         activePositionPicker = null;
         d3.select("body").style("cursor", "default");
 
-        svgContext.selectAll("*").remove();
-        drawing.draw(svgContext);
+        updateCanvas();
         renderMenu();
+        renderInspector();
     }
 });
 
@@ -290,6 +290,61 @@ try {
 import { Artefact } from './index';
 
 let inspectedArtefact: Artefact | null = null;
+
+let draftArtefact: {
+    sortName: string;
+    dependencies: Record<string, Artefact | boolean>;
+    data: Record<string, any>;
+} | null = null;
+
+let dependencyPickingFor: string | null = null;
+
+function updateCanvas(): void {
+    svgContext.selectAll("*").remove();
+    drawing.draw(svgContext);
+
+    if (draftArtefact) {
+        const sortDef = sortStore.getSort(draftArtefact.sortName);
+        if (sortDef) {
+            let canPreview = true;
+
+            // Check non-flag dependencies
+            for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
+                if (expectedSort !== "flag") {
+                    if (!draftArtefact.dependencies[depKey]) {
+                        canPreview = false;
+                        break;
+                    }
+                }
+            }
+
+            // Check required attributes
+            for (const [attrName, _] of Object.entries(sortDef.attributes)) {
+                if (draftArtefact.data[attrName] === undefined) {
+                    canPreview = false;
+                    break;
+                }
+            }
+
+            if (canPreview) {
+                try {
+                    const tempArt = new Artefact(
+                        draftArtefact.sortName,
+                        draftArtefact.dependencies,
+                        draftArtefact.data,
+                        sortDef.drawFunction
+                    );
+                    tempArt.draw(svgContext);
+                    if (tempArt.svgElement) {
+                        tempArt.svgElement.attr("opacity", 0.7);
+                    }
+                } catch (e) {
+                    // Ignore preview errors if draft incomplete
+                }
+            }
+        }
+    }
+}
 
 function renderMenu(): void {
     const menuContent = document.getElementById("menu-content");
@@ -411,20 +466,37 @@ function renderMenu(): void {
             } else {
                 drawing.removeArtefact(artefact);
             }
-            // Redraw Canvas
-            svgContext.selectAll("*").remove();
-            drawing.draw(svgContext);
-            // Re-render UI
+            // Redraw Canvas & UI
+            updateCanvas();
             renderMenu();
         });
 
-        // Interaction Logic (Click to Inspect)
+        // Interaction Logic (Click to Inspect or Pick Dependency)
         labelSpan.addEventListener("click", (e) => {
             e.stopPropagation();
+
+            if (dependencyPickingFor && draftArtefact) {
+                const sortDef = sortStore.getSort(draftArtefact.sortName);
+                const expectedSort = sortDef?.dependencies[dependencyPickingFor];
+
+                if (expectedSort && artefact.sortName === expectedSort) {
+                    draftArtefact.dependencies[dependencyPickingFor] = artefact;
+                    dependencyPickingFor = null;
+                    renderMenu();
+                    renderInspector();
+                    updateCanvas();
+                } else {
+                    alert(`Expected sort '${expectedSort}', but selected '${artefact.sortName}'.`);
+                }
+                return;
+            }
+
             if (inspectedArtefact === artefact) {
                 inspectedArtefact = null;
             } else {
                 inspectedArtefact = artefact;
+                draftArtefact = null;
+                dependencyPickingFor = null;
             }
             renderMenu();
             renderInspector();
@@ -491,8 +563,7 @@ function renderMenu(): void {
                 flagRemoveBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     delete artefact.dependencies[flagKey];
-                    svgContext.selectAll("*").remove();
-                    drawing.draw(svgContext);
+                    updateCanvas();
                     renderMenu();
                 });
 
@@ -511,10 +582,50 @@ function renderMenu(): void {
         return nodeDiv;
     }
 
-    // Render the groups
-    for (const [sortName, artefacts] of Object.entries(grouped)) {
+    // Render the groups for all registered sorts
+    for (const sortDef of sortStore.getAllSorts()) {
+        const artefacts = grouped[sortDef.name] || [];
         const groupHeader = document.createElement("h3");
-        groupHeader.textContent = `${sortName} (${artefacts.length})`;
+        
+        const titleSpan = document.createElement("span");
+        titleSpan.textContent = `${sortDef.name} (${artefacts.length})`;
+        
+        const addBtn = document.createElement("button");
+        addBtn.className = "add-sort-btn";
+        addBtn.textContent = "+";
+        addBtn.title = `Add new ${sortDef.name}`;
+        
+        addBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            inspectedArtefact = null;
+
+            // Default attribute values for creation draft
+            const initialData: Record<string, any> = {};
+            for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
+                if (expectedType === "position") {
+                    initialData[attrName] = [300, 300];
+                } else if (expectedType === "number") {
+                    initialData[attrName] = 2;
+                } else if (expectedType === "boolean") {
+                    initialData[attrName] = false;
+                } else if (expectedType === "string") {
+                    initialData[attrName] = "";
+                }
+            }
+
+            draftArtefact = {
+                sortName: sortDef.name,
+                dependencies: {},
+                data: initialData
+            };
+            dependencyPickingFor = null;
+            renderMenu();
+            renderInspector();
+            updateCanvas();
+        });
+
+        groupHeader.appendChild(titleSpan);
+        groupHeader.appendChild(addBtn);
         menuContent.appendChild(groupHeader);
 
         for (const art of artefacts) {
@@ -562,6 +673,308 @@ function renderInspector() {
 
     inspectorContent.innerHTML = "";
 
+    // A. Creation View (Draft Artefact Mode)
+    if (draftArtefact) {
+        const sortDef = sortStore.getSort(draftArtefact.sortName);
+        if (!sortDef) return;
+
+        const triggerDraftUpdate = () => {
+            updateCanvas();
+            renderInspector();
+        };
+
+        const h3 = document.createElement("h3");
+        h3.textContent = `New ${draftArtefact.sortName}`;
+        h3.style.marginTop = "0";
+        inspectorContent.appendChild(h3);
+
+        const form = document.createElement("div");
+
+        // 1. Dependencies Section
+        const nonFlagDeps = Object.entries(sortDef.dependencies).filter(([_, expected]) => expected !== "flag");
+        if (nonFlagDeps.length > 0) {
+            const depsHeader = document.createElement("h4");
+            depsHeader.textContent = "Dependencies";
+            depsHeader.style.margin = "10px 0 5px 0";
+            depsHeader.style.fontSize = "0.95rem";
+            depsHeader.style.color = "#444";
+            form.appendChild(depsHeader);
+
+            for (const [depKey, expectedSort] of nonFlagDeps) {
+                const group = document.createElement("div");
+                group.className = "form-group";
+
+                const picked = draftArtefact.dependencies[depKey] as Artefact | undefined;
+                const pickedLabel = picked ? (picked.data.label || "(unnamed)") : null;
+
+                group.innerHTML = `<label>${depKey} (${expectedSort})</label>`;
+
+                const pickDepBtn = document.createElement("button");
+                pickDepBtn.type = "button";
+                pickDepBtn.className = "pick-dep-btn";
+                if (dependencyPickingFor === depKey) {
+                    pickDepBtn.classList.add("active");
+                }
+
+                if (picked) {
+                    pickDepBtn.textContent = `✓ ${pickedLabel}`;
+                } else {
+                    pickDepBtn.textContent = dependencyPickingFor === depKey ? "Select in tree..." : `Pick ${depKey}`;
+                }
+
+                pickDepBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (dependencyPickingFor === depKey) {
+                        dependencyPickingFor = null;
+                    } else {
+                        dependencyPickingFor = depKey;
+                    }
+                    renderInspector();
+                });
+
+                group.appendChild(pickDepBtn);
+                form.appendChild(group);
+            }
+        }
+
+        // 2. Data Attributes Section
+        const dataHeader = document.createElement("h4");
+        dataHeader.textContent = "Data Attributes";
+        dataHeader.style.margin = "15px 0 5px 0";
+        dataHeader.style.fontSize = "0.95rem";
+        dataHeader.style.color = "#444";
+        form.appendChild(dataHeader);
+
+        // Label input
+        const labelGroup = document.createElement("div");
+        labelGroup.className = "form-group";
+        labelGroup.innerHTML = `<label>Label</label>`;
+        const labelInput = document.createElement("input");
+        labelInput.type = "text";
+        labelInput.value = draftArtefact.data.label || "";
+        labelInput.addEventListener("change", (e) => {
+            const val = (e.target as HTMLInputElement).value.trim();
+            if (val === "") delete draftArtefact!.data.label;
+            else draftArtefact!.data.label = val;
+            triggerDraftUpdate();
+        });
+        labelGroup.appendChild(labelInput);
+        form.appendChild(labelGroup);
+
+        for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
+            const group = document.createElement("div");
+            if (expectedType === "string" || expectedType === "number") {
+                group.className = "form-group";
+                group.innerHTML = `<label>${attrName} (${expectedType})</label>`;
+                const input = document.createElement("input");
+                input.type = expectedType === "number" ? "number" : "text";
+                if (expectedType === "number") input.step = "any";
+                input.value = draftArtefact.data[attrName] !== undefined ? draftArtefact.data[attrName] : "";
+
+                input.addEventListener("change", (e) => {
+                    const target = e.target as HTMLInputElement;
+                    if (expectedType === "number") {
+                        const parsed = parseFloat(target.value);
+                        if (!isNaN(parsed)) {
+                            draftArtefact!.data[attrName] = parsed;
+                            triggerDraftUpdate();
+                        }
+                    } else {
+                        draftArtefact!.data[attrName] = target.value;
+                        triggerDraftUpdate();
+                    }
+                });
+                group.appendChild(input);
+
+            } else if (expectedType === "boolean") {
+                group.className = "form-group checkbox";
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.checked = !!draftArtefact.data[attrName];
+                const label = document.createElement("label");
+                label.textContent = attrName;
+
+                input.addEventListener("change", (e) => {
+                    draftArtefact!.data[attrName] = (e.target as HTMLInputElement).checked;
+                    triggerDraftUpdate();
+                });
+                group.appendChild(input);
+                group.appendChild(label);
+
+            } else if (expectedType === "position") {
+                group.className = "form-group";
+                group.innerHTML = `<label>${attrName} (x, y)</label>`;
+                const posContainer = document.createElement("div");
+                posContainer.className = "position";
+
+                const inputX = document.createElement("input");
+                inputX.type = "number";
+                inputX.step = "any";
+                inputX.value = draftArtefact.data[attrName] ? draftArtefact.data[attrName][0] : 0;
+
+                const inputY = document.createElement("input");
+                inputY.type = "number";
+                inputY.step = "any";
+                inputY.value = draftArtefact.data[attrName] ? draftArtefact.data[attrName][1] : 0;
+
+                const updatePosition = () => {
+                    const x = parseFloat(inputX.value);
+                    const y = parseFloat(inputY.value);
+                    if (!isNaN(x) && !isNaN(y)) {
+                        draftArtefact!.data[attrName] = [x, y];
+                        triggerDraftUpdate();
+                    }
+                };
+
+                inputX.addEventListener("change", updatePosition);
+                inputY.addEventListener("change", updatePosition);
+
+                const pickBtn = document.createElement("button");
+                pickBtn.type = "button";
+                pickBtn.className = "pick-btn";
+                pickBtn.textContent = "📍";
+                pickBtn.title = "Click canvas to pick position";
+
+                const draftProxy = { data: draftArtefact.data } as Artefact;
+
+                if (activePositionPicker && activePositionPicker.artefact.data === draftArtefact.data && activePositionPicker.attrName === attrName) {
+                    pickBtn.style.backgroundColor = "#aed6f1";
+                    activePositionPicker.pickBtn = pickBtn;
+                    activePositionPicker.inputX = inputX;
+                    activePositionPicker.inputY = inputY;
+                }
+
+                pickBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (activePositionPicker && activePositionPicker.artefact.data === draftArtefact!.data && activePositionPicker.attrName === attrName) {
+                        activePositionPicker = null;
+                        d3.select("body").style("cursor", "default");
+                        pickBtn.style.backgroundColor = "";
+                    } else {
+                        if (activePositionPicker) {
+                            activePositionPicker.pickBtn.style.backgroundColor = "";
+                        }
+                        activePositionPicker = {
+                            artefact: draftProxy,
+                            attrName,
+                            inputX,
+                            inputY,
+                            pickBtn
+                        };
+                        d3.select("body").style("cursor", "crosshair");
+                        pickBtn.style.backgroundColor = "#aed6f1";
+                    }
+                });
+
+                posContainer.appendChild(inputX);
+                posContainer.appendChild(inputY);
+                posContainer.appendChild(pickBtn);
+                group.appendChild(posContainer);
+            }
+            form.appendChild(group);
+        }
+
+        // 3. Flags Section
+        const flagDeps = Object.entries(sortDef.dependencies).filter(([_, expected]) => expected === "flag");
+        if (flagDeps.length > 0) {
+            const flagsHeader = document.createElement("h4");
+            flagsHeader.textContent = "Flags";
+            flagsHeader.style.margin = "15px 0 5px 0";
+            flagsHeader.style.fontSize = "0.95rem";
+            flagsHeader.style.color = "#444";
+            form.appendChild(flagsHeader);
+
+            for (const [flagKey, _] of flagDeps) {
+                const group = document.createElement("div");
+                group.className = "form-group checkbox";
+
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.checked = draftArtefact.dependencies[flagKey] === true;
+
+                const label = document.createElement("label");
+                label.textContent = flagKey;
+
+                input.addEventListener("change", (e) => {
+                    if ((e.target as HTMLInputElement).checked) {
+                        draftArtefact!.dependencies[flagKey] = true;
+                    } else {
+                        delete draftArtefact!.dependencies[flagKey];
+                    }
+                    triggerDraftUpdate();
+                });
+
+                group.appendChild(input);
+                group.appendChild(label);
+                form.appendChild(group);
+            }
+        }
+
+        // 4. Action Buttons
+        const actionGroup = document.createElement("div");
+        actionGroup.className = "action-btns";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "btn btn-cancel";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", () => {
+            draftArtefact = null;
+            dependencyPickingFor = null;
+            renderMenu();
+            renderInspector();
+            updateCanvas();
+        });
+
+        // Validate check
+        let isValid = true;
+        for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
+            if (expectedSort !== "flag" && !draftArtefact.dependencies[depKey]) {
+                isValid = false;
+                break;
+            }
+        }
+        for (const [attrName, _] of Object.entries(sortDef.attributes)) {
+            if (draftArtefact.data[attrName] === undefined) {
+                isValid = false;
+                break;
+            }
+        }
+
+        const validateBtn = document.createElement("button");
+        validateBtn.type = "button";
+        validateBtn.className = "btn btn-validate";
+        validateBtn.textContent = "Validate";
+        validateBtn.disabled = !isValid;
+
+        validateBtn.addEventListener("click", () => {
+            if (isValid) {
+                try {
+                    drawing.newArtefact(
+                        draftArtefact!.sortName,
+                        draftArtefact!.dependencies,
+                        draftArtefact!.data
+                    );
+                    draftArtefact = null;
+                    dependencyPickingFor = null;
+                    updateCanvas();
+                    renderMenu();
+                    renderInspector();
+                } catch (err) {
+                    alert((err as Error).message);
+                }
+            }
+        });
+
+        actionGroup.appendChild(cancelBtn);
+        actionGroup.appendChild(validateBtn);
+        form.appendChild(actionGroup);
+
+        inspectorContent.appendChild(form);
+        return;
+    }
+
+    // B. Normal Inspection Mode
     if (!inspectedArtefact) {
         inspectorContent.innerHTML = `<p style="color: #666; font-style: italic;">Select an artefact to inspect.</p>`;
         return;
