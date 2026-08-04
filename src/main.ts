@@ -311,6 +311,41 @@ function renderMenu(): void {
         return acc;
     }, {} as Record<string, typeof allArtefacts>);
 
+    // Helper to apply 50% opacity to irrelevant artefacts and UI elements
+    function applyOpacities(target: Artefact | null) {
+        if (!target) {
+            for (const art of allArtefacts) {
+                if (art.svgElement) {
+                    art.svgElement.attr("opacity", 1);
+                }
+                const uiEls = uiNodeMap.get(art);
+                if (uiEls) {
+                    for (const el of uiEls) {
+                        el.style.opacity = "1";
+                    }
+                }
+            }
+            return;
+        }
+
+        const activeSet = target.getSelfAndDependencies();
+        for (const art of allArtefacts) {
+            const isActive = activeSet.has(art);
+            const opacity = isActive ? 1 : 0.5;
+
+            if (art.svgElement) {
+                art.svgElement.attr("opacity", opacity);
+            }
+
+            const uiEls = uiNodeMap.get(art);
+            if (uiEls) {
+                for (const el of uiEls) {
+                    el.style.opacity = opacity.toString();
+                }
+            }
+        }
+    }
+
     // Recursive function to build the tree DOM
     function buildTreeNode(artefact: Artefact, dependencyKey?: string, isTagGroupCtx?: string): HTMLElement {
         const nodeDiv = document.createElement("div");
@@ -397,40 +432,14 @@ function renderMenu(): void {
 
         // Interaction Logic (Hover)
         labelSpan.addEventListener("mouseenter", () => {
-            // Calculate active set
-            const activeSet = artefact.getSelfAndDependencies();
-
-            // Update Canvas & UI Opacities
-            for (const art of allArtefacts) {
-                const isActive = activeSet.has(art);
-                const opacity = isActive ? 1 : 0.5;
-
-                if (art.svgElement) {
-                    art.svgElement.attr("opacity", opacity);
-                }
-
-                const uiEls = uiNodeMap.get(art);
-                if (uiEls) {
-                    for (const el of uiEls) {
-                        el.style.opacity = opacity.toString();
-                    }
-                }
+            if (!inspectedArtefact) {
+                applyOpacities(artefact);
             }
         });
 
         labelSpan.addEventListener("mouseleave", () => {
-            // Reset Canvas & UI Opacities
-            for (const art of allArtefacts) {
-                if (art.svgElement) {
-                    art.svgElement.attr("opacity", 1);
-                }
-
-                const uiEls = uiNodeMap.get(art);
-                if (uiEls) {
-                    for (const el of uiEls) {
-                        el.style.opacity = "1";
-                    }
-                }
+            if (!inspectedArtefact) {
+                applyOpacities(null);
             }
         });
 
@@ -537,6 +546,9 @@ function renderMenu(): void {
             menuContent.appendChild(rootNode);
         }
     }
+
+    // Apply opacities based on active selection
+    applyOpacities(inspectedArtefact);
 }
 
 // Initial UI Render
