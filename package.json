@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:sorts": "tsc src/default_sorts.ts --target esnext --moduleResolution node --outDir public",
     "preview": "vite preview"
   },
   "devDependencies": {

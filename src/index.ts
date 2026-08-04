@@ -49,6 +49,10 @@ export class SortStore {
     getSort(name: string): SortDefinition | undefined {
         return this.sorts.get(name);
     }
+
+    clear(): void {
+        this.sorts.clear();
+    }
 }
 
 export class Artefact {

@@ -1,174 +1,12 @@
 import * as d3 from 'd3';
 import { SortStore, Drawing } from './index';
+import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
 const sortStore = new SortStore();
 
-// 2. Define our Sorts (Vertex and Edge)
-sortStore
-    .newSort(
-        "Vertex",
-        {}, // No dependencies
-        { position: "position" },
-        (data: any, context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
-            // Draw a vertex (circle) at data.position
-            const group = context.append("g")
-                .attr("transform", `translate(${data.position[0]}, ${data.position[1]})`);
-
-            group.append("circle")
-                .attr("r", 20)
-                .attr("fill", "#69b3a2")
-                .attr("stroke", "#333")
-                .attr("stroke-width", 2);
-
-            if (data.label) {
-                group.append("text")
-                    .attr("text-anchor", "middle")
-                    .attr("dy", ".3em") // Vertically center text
-                    .attr("fill", "white")
-                    .attr("font-family", "sans-serif")
-                    .attr("font-size", "14px")
-                    .text(data.label);
-            }
-            
-            return group; // Return the group to store in Artefact
-        }
-    )
-    .newSort(
-        "Edge",
-        { source: "Vertex", target: "Vertex", mono: "flag" }, // Dependencies + flag
-        { width: "number" },
-        (data: any, context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
-            // Draw an edge (line) from data.source to data.target with given width
-            // Note: In D3, SVG elements are drawn in the order they are appended.
-            // To ensure lines appear *behind* vertices, we might ideally use groups or layer management,
-            // but for this prototype, we'll just append them to the context.
-            
-            // The data object contains 'source' and 'target' which are the data objects of the dependencies
-            const srcPos = data.source.position;
-            const tgtPos = data.target.position;
-
-            const lineGroup = context.insert("g", ":first-child");
-
-            lineGroup.append("line")
-                .attr("x1", srcPos[0])
-                .attr("y1", srcPos[1])
-                .attr("x2", tgtPos[0])
-                .attr("y2", tgtPos[1])
-                .attr("stroke", data.mono ? "#2c3e50" : "#999")
-                .attr("stroke-width", data.width)
-                .attr("stroke-dasharray", data.mono ? "5,5" : "none")
-                .attr("marker-end", data.mono ? "url(#arrowhead-mono)" : "url(#arrowhead-normal)");
-
-            if (data.mono) {
-                // Draw a small indicator hook/circle if mono flag is true
-                const midX = (srcPos[0] + tgtPos[0]) / 2;
-                const midY = (srcPos[1] + tgtPos[1]) / 2;
-                
-                lineGroup.append("circle")
-                    .attr("cx", midX)
-                    .attr("cy", midY)
-                    .attr("r", 4)
-                    .attr("fill", "#e74c3c");
-            }
-
-            if (data.label) {
-                // Calculate midpoint for label
-                const midX = (srcPos[0] + tgtPos[0]) / 2;
-                const midY = (srcPos[1] + tgtPos[1]) / 2;
-
-                context.append("text")
-                    .attr("x", midX)
-                    .attr("y", midY - 10) // slightly above the line
-                    .attr("text-anchor", "middle")
-                    .attr("fill", "#333")
-                    .attr("font-family", "sans-serif")
-                    .attr("font-size", "12px")
-                    .text(data.label);
-            }
-            
-            return lineGroup; // Return the line group
-        },
-        (context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
-            // initContext: Set up SVG Defs for Arrowhead Markers
-            let defs = context.select("defs") as any;
-            if (defs.empty()) {
-                defs = context.append("defs") as any;
-            }
-
-            // Standard arrowhead
-            defs.append("marker")
-                .attr("id", "arrowhead-normal")
-                .attr("viewBox", "0 -5 10 10")
-                .attr("refX", 25) // Offset to sit on the edge of the r=20 circle
-                .attr("refY", 0)
-                .attr("orient", "auto")
-                .attr("markerWidth", 8)
-                .attr("markerHeight", 8)
-                .append("path")
-                .attr("d", "M0,-5L10,0L0,5")
-                .attr("fill", "#999");
-
-            // Mono arrowhead
-            defs.append("marker")
-                .attr("id", "arrowhead-mono")
-                .attr("viewBox", "0 -5 10 10")
-                .attr("refX", 25) 
-                .attr("refY", 0)
-                .attr("orient", "auto")
-                .attr("markerWidth", 8)
-                .attr("markerHeight", 8)
-                .append("path")
-                .attr("d", "M0,-5L10,0L0,5")
-                .attr("fill", "#2c3e50");
-        }
-    )
-    .newSort(
-        "Pullback",
-        { p1: "Edge", p2: "Edge", q1: "Edge", q2: "Edge" },
-        {},
-        (data: any, context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
-            // Assume p1 and p2 share the pullback source vertex
-            const V = data.p1.source.position;
-            const T1 = data.p1.target.position;
-            const T2 = data.p2.target.position;
-            
-            // Calculate normalized direction vectors
-            const dx1 = T1[0] - V[0];
-            const dy1 = T1[1] - V[1];
-            const len1 = Math.sqrt(dx1*dx1 + dy1*dy1);
-            const ux1 = dx1 / len1;
-            const uy1 = dy1 / len1;
-
-            const dx2 = T2[0] - V[0];
-            const dy2 = T2[1] - V[1];
-            const len2 = Math.sqrt(dx2*dx2 + dy2*dy2);
-            const ux2 = dx2 / len2;
-            const uy2 = dy2 / len2;
-
-            // distance from the center of the vertex
-            const offset = 25; 
-            // size of the pullback corner legs
-            const size = 15; 
-
-            // Re-calculate points strictly using the unit vectors for arbitrary angles
-            const p1x = V[0] + ux1 * offset + ux2 * (offset + size);
-            const p1y = V[1] + uy1 * offset + uy2 * (offset + size);
-            
-            const p2x = V[0] + ux1 * (offset + size) + ux2 * (offset + size);
-            const p2y = V[1] + uy1 * (offset + size) + uy2 * (offset + size); // The innermost corner
-            
-            const p3x = V[0] + ux1 * (offset + size) + ux2 * offset;
-            const p3y = V[1] + uy1 * (offset + size) + uy2 * offset;
-
-            return context.append("path")
-                .attr("d", `M ${p1x},${p1y} L ${p2x},${p2y} L ${p3x},${p3y}`)
-                .attr("fill", "none")
-                .attr("stroke", "#333")
-                .attr("stroke-width", 2)
-                .attr("stroke-linejoin", "miter");
-        }
-    );
+// 2. Load default sorts via executor
+new Function('sortStore', 'd3', defaultSortsCode)(sortStore, d3);
 
 // 3. Create the Drawing instance
 const drawing = new Drawing(sortStore);
@@ -683,6 +521,58 @@ if (clearBtn) {
             renderMenu();
             renderInspector();
         }
+    });
+}
+
+// Load Sort Script Button Listener
+const loadScriptBtn = document.getElementById("load-script-btn");
+const scriptUpload = document.getElementById("script-upload") as HTMLInputElement;
+
+if (loadScriptBtn && scriptUpload) {
+    loadScriptBtn.addEventListener("click", () => {
+        scriptUpload.value = "";
+        scriptUpload.click();
+    });
+
+    scriptUpload.addEventListener("change", (e) => {
+        const files = (e.target as HTMLInputElement).files;
+        if (!files || files.length === 0) return;
+
+        const file = files[0];
+        const reader = new FileReader();
+
+        reader.onload = (event) => {
+            const code = event.target?.result as string;
+            if (!code) return;
+
+            try {
+                // Clear existing sorts and drawing
+                sortStore.clear();
+                drawing.clear();
+                inspectedArtefact = null;
+                draftArtefact = null;
+                dependencyPickingFor = null;
+                if (activePositionPicker) {
+                    activePositionPicker = null;
+                    d3.select("body").style("cursor", "default");
+                }
+
+                // Execute the user's uploaded script with sortStore and d3 injected
+                const executor = new Function('sortStore', 'd3', code);
+                executor(sortStore, d3);
+
+                // Refresh UI and Canvas
+                updateCanvas();
+                renderMenu();
+                renderInspector();
+
+            } catch (err) {
+                alert(`Error executing sort script:\n${(err as Error).message}`);
+                console.error("Script Execution Error:", err);
+            }
+        };
+
+        reader.readAsText(file);
     });
 }
 
