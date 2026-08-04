@@ -207,6 +207,36 @@ drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {});
 // We select our canvas SVG element
 const svgContext = d3.select("#canvas");
 
+// Global Position Picker state
+let activePositionPicker: {
+    artefact: Artefact;
+    attrName: string;
+    inputX: HTMLInputElement;
+    inputY: HTMLInputElement;
+    pickBtn: HTMLButtonElement;
+} | null = null;
+
+svgContext.on("click", (event: MouseEvent) => {
+    if (activePositionPicker) {
+        event.stopPropagation();
+        const coords = d3.pointer(event, svgContext.node());
+        const x = Math.round(coords[0]);
+        const y = Math.round(coords[1]);
+
+        activePositionPicker.artefact.data[activePositionPicker.attrName] = [x, y];
+        activePositionPicker.inputX.value = x.toString();
+        activePositionPicker.inputY.value = y.toString();
+
+        activePositionPicker.pickBtn.style.backgroundColor = "";
+        activePositionPicker = null;
+        d3.select("body").style("cursor", "default");
+
+        svgContext.selectAll("*").remove();
+        drawing.draw(svgContext);
+        renderMenu();
+    }
+});
+
 // To draw edges behind vertices, it's a common D3 practice to use layer groups. 
 // However, according to our architecture, drawing.draw(context) will iterate sequentially.
 // Thus, to keep things strictly aligned with the class structure, we will just call draw().
@@ -636,8 +666,44 @@ function renderInspector() {
             inputX.addEventListener("change", updatePosition);
             inputY.addEventListener("change", updatePosition);
             
+            const pickBtn = document.createElement("button");
+            pickBtn.type = "button";
+            pickBtn.className = "pick-btn";
+            pickBtn.textContent = "📍";
+            pickBtn.title = "Click canvas to pick position";
+
+            if (activePositionPicker && activePositionPicker.artefact === inspectedArtefact && activePositionPicker.attrName === attrName) {
+                pickBtn.style.backgroundColor = "#aed6f1";
+                activePositionPicker.pickBtn = pickBtn;
+                activePositionPicker.inputX = inputX;
+                activePositionPicker.inputY = inputY;
+            }
+
+            pickBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (activePositionPicker && activePositionPicker.artefact === inspectedArtefact && activePositionPicker.attrName === attrName) {
+                    activePositionPicker = null;
+                    d3.select("body").style("cursor", "default");
+                    pickBtn.style.backgroundColor = "";
+                } else {
+                    if (activePositionPicker) {
+                        activePositionPicker.pickBtn.style.backgroundColor = "";
+                    }
+                    activePositionPicker = {
+                        artefact: inspectedArtefact!,
+                        attrName,
+                        inputX,
+                        inputY,
+                        pickBtn
+                    };
+                    d3.select("body").style("cursor", "crosshair");
+                    pickBtn.style.backgroundColor = "#aed6f1";
+                }
+            });
+
             posContainer.appendChild(inputX);
             posContainer.appendChild(inputY);
+            posContainer.appendChild(pickBtn);
             group.appendChild(posContainer);
         }
         
