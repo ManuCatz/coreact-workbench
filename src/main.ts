@@ -264,8 +264,11 @@ try {
 // 7. Render UI Menu & Interaction
 import { Artefact } from './index';
 
-const menuContent = document.getElementById("menu-content");
-if (menuContent) {
+function renderMenu(): void {
+    const menuContent = document.getElementById("menu-content");
+    if (!menuContent) return;
+    
+    menuContent.innerHTML = "";
     const allArtefacts = drawing.getArtefacts();
     
     // Map to track UI elements associated with each artefact for dimming
@@ -309,8 +312,14 @@ if (menuContent) {
         const prefix = dependencyKey ? `${dependencyKey}: ` : "";
         labelSpan.textContent = `${prefix}${artefactLabel}`;
         
+        const removeBtn = document.createElement("span");
+        removeBtn.className = "remove-btn";
+        removeBtn.textContent = "×";
+        removeBtn.title = "Remove artefact";
+
         headerDiv.appendChild(toggleIcon);
         headerDiv.appendChild(labelSpan);
+        headerDiv.appendChild(removeBtn);
         nodeDiv.appendChild(headerDiv);
 
         // Register this UI node for the artefact
@@ -319,8 +328,19 @@ if (menuContent) {
             uiNodes.push(nodeDiv);
         }
 
+        // Remove button action
+        removeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            drawing.removeArtefact(artefact);
+            // Redraw Canvas
+            svgContext.selectAll("*").remove();
+            drawing.draw(svgContext);
+            // Re-render UI
+            renderMenu();
+        });
+
         // Interaction Logic (Hover)
-        labelSpan.addEventListener("mouseenter", (e) => {
+        labelSpan.addEventListener("mouseenter", () => {
             // Calculate active set
             const activeSet = artefact.getSelfAndDependencies();
 
@@ -342,7 +362,7 @@ if (menuContent) {
             }
         });
 
-        labelSpan.addEventListener("mouseleave", (e) => {
+        labelSpan.addEventListener("mouseleave", () => {
             // Reset Canvas & UI Opacities
             for (const art of allArtefacts) {
                 if (art.svgElement) {
@@ -420,3 +440,6 @@ if (menuContent) {
         }
     }
 }
+
+// Initial UI Render
+renderMenu();

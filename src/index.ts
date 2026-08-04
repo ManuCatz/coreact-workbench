@@ -8,23 +8,6 @@ export interface SortDefinition {
 
 export class SortStore {
     private sorts: Map<string, SortDefinition> = new Map();
-    private flags: Map<string, string> = new Map();
-
-    newFlag(name: string, targetSortName: string): this {
-        if (!this.sorts.has(targetSortName)) {
-            throw new Error(`Consistency Check Failed: Cannot attach flag '${name}' to undefined sort '${targetSortName}'.`);
-        }
-        this.flags.set(name, targetSortName);
-        return this;
-    }
-
-    getFlagsForSort(sortName: string): string[] {
-        const result: string[] = [];
-        for (const [flagName, targetSort] of this.flags.entries()) {
-            if (targetSort === sortName) result.push(flagName);
-        }
-        return result;
-    }
 
     getAllSorts(): SortDefinition[] {
         return Array.from(this.sorts.values());
@@ -199,5 +182,9 @@ export class Drawing {
 
     getArtefacts(): Artefact[] {
         return this.artefacts;
+    }
+
+    removeArtefact(target: Artefact): void {
+        this.artefacts = this.artefacts.filter(art => !art.getSelfAndDependencies().has(target));
     }
 }

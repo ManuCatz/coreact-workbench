@@ -113,6 +113,24 @@
         background-color: #e0e0e0;
       }
       
+      .remove-btn {
+        margin-left: auto;
+        color: #e74c3c;
+        cursor: pointer;
+        font-weight: bold;
+        padding: 0 4px;
+        border-radius: 3px;
+        font-size: 0.9em;
+        opacity: 0.3;
+        transition: opacity 0.2s, background-color 0.2s;
+      }
+      .node-header:hover .remove-btn {
+        opacity: 1;
+      }
+      .remove-btn:hover {
+        background-color: #fadbd8;
+      }
+      
       /* Canvas transitions for smooth fading */
       #canvas * {
         transition: opacity 0.3s ease;
