@@ -55,7 +55,8 @@ sortStore
                 .attr("y2", tgtPos[1])
                 .attr("stroke", data.mono ? "#2c3e50" : "#999")
                 .attr("stroke-width", data.width)
-                .attr("stroke-dasharray", data.mono ? "5,5" : "none");
+                .attr("stroke-dasharray", data.mono ? "5,5" : "none")
+                .attr("marker-end", data.mono ? "url(#arrowhead-mono)" : "url(#arrowhead-normal)");
 
             if (data.mono) {
                 // Draw a small indicator hook/circle if mono flag is true
@@ -83,6 +84,39 @@ sortStore
                     .attr("font-size", "12px")
                     .text(data.label);
             }
+        },
+        (context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
+            // initContext: Set up SVG Defs for Arrowhead Markers
+            let defs = context.select("defs");
+            if (defs.empty()) {
+                defs = context.append("defs");
+            }
+
+            // Standard arrowhead
+            defs.append("marker")
+                .attr("id", "arrowhead-normal")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 25) // Offset to sit on the edge of the r=20 circle
+                .attr("refY", 0)
+                .attr("orient", "auto")
+                .attr("markerWidth", 8)
+                .attr("markerHeight", 8)
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#999");
+
+            // Mono arrowhead
+            defs.append("marker")
+                .attr("id", "arrowhead-mono")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 25) 
+                .attr("refY", 0)
+                .attr("orient", "auto")
+                .attr("markerWidth", 8)
+                .attr("markerHeight", 8)
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#2c3e50");
         }
     )
     .newFlag("mono", "Edge");

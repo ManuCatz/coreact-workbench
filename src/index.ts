@@ -3,6 +3,7 @@ export interface SortDefinition {
     dependencies: Record<string, string>;
     attributes: Record<string, string>;
     drawFunction: (data: any, context: any) => void;
+    initContext?: (context: any) => void;
 }
 
 export class SortStore {
@@ -25,11 +26,16 @@ export class SortStore {
         return result;
     }
 
+    getAllSorts(): SortDefinition[] {
+        return Array.from(this.sorts.values());
+    }
+
     newSort(
         name: string,
         dependencies: Record<string, string>,
         attributes: Record<string, string>,
-        drawFunction: (data: any, context: any) => void
+        drawFunction: (data: any, context: any) => void,
+        initContext?: (context: any) => void
     ): this {
         // Consistency check: all dependencies must be already defined sorts
         for (const [depKey, depSortName] of Object.entries(dependencies)) {
@@ -50,7 +56,8 @@ export class SortStore {
             name,
             dependencies,
             attributes,
-            drawFunction
+            drawFunction,
+            initContext
         });
 
         return this; // Enable chaining
@@ -159,6 +166,14 @@ export class Drawing {
     }
 
     draw(context: any): void {
+        // 1. Initialize context for all defined sorts (e.g., for SVG defs/markers)
+        for (const sortDef of this.sortStore.getAllSorts()) {
+            if (sortDef.initContext) {
+                sortDef.initContext(context);
+            }
+        }
+
+        // 2. Draw all artefacts
         for (const artefact of this.artefacts) {
             artefact.draw(context);
         }
