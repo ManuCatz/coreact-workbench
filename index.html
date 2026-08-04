@@ -259,7 +259,10 @@
   <body>
     <div id="app">
       <div id="menu">
-        <h2>Artefacts Menu</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+          <h2 style="margin: 0; border: none; padding: 0;">Artefacts Menu</h2>
+          <button id="clear-btn" class="btn btn-cancel" style="padding: 4px 8px; font-size: 0.8rem;" title="Clear all artefacts">Clear All</button>
+        </div>
         <div id="menu-content"></div>
       </div>
       <svg id="canvas" width="800" height="800"></svg>

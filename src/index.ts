@@ -187,4 +187,8 @@ export class Drawing {
     removeArtefact(target: Artefact): void {
         this.artefacts = this.artefacts.filter(art => !art.getSelfAndDependencies().has(target));
     }
+
+    clear(): void {
+        this.artefacts = [];
+    }
 }

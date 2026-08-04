@@ -666,6 +666,26 @@ function renderMenu(): void {
 renderMenu();
 renderInspector();
 
+// Clear All Button Listener
+const clearBtn = document.getElementById("clear-btn");
+if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+        if (confirm("Are you sure you want to clear the entire drawing?")) {
+            drawing.clear();
+            inspectedArtefact = null;
+            draftArtefact = null;
+            dependencyPickingFor = null;
+            if (activePositionPicker) {
+                activePositionPicker = null;
+                d3.select("body").style("cursor", "default");
+            }
+            updateCanvas();
+            renderMenu();
+            renderInspector();
+        }
+    });
+}
+
 // 8. Inspector Logic
 function renderInspector() {
     const inspectorContent = document.getElementById("inspector-content");
