@@ -50,6 +50,7 @@
       .tree-node {
         margin-left: 15px;
         line-height: 1.5;
+        transition: opacity 0.3s ease;
       }
       .tree-node.root-node {
         margin-left: 0;
@@ -84,8 +85,14 @@
       .tree-node.expanded > .node-header > .toggle-icon::before {
         content: "▼";
       }
+      .tree-node > .node-header > .toggle-icon {
+        cursor: pointer;
+      }
       .tree-node > .node-header > .toggle-icon::before {
         content: "▶";
+      }
+      .tree-node.empty > .node-header > .toggle-icon {
+        cursor: default;
       }
       .tree-node.empty > .node-header > .toggle-icon::before {
         content: "•";
@@ -93,6 +100,22 @@
       }
       .tree-node.empty > .node-header {
         cursor: default;
+      }
+      
+      /* Selection Highlight Styles */
+      .node-label {
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 3px;
+        transition: background-color 0.2s, color 0.2s;
+      }
+      .node-label:hover {
+        background-color: #e0e0e0;
+      }
+      
+      /* Canvas transitions for smooth fading */
+      #canvas * {
+        transition: opacity 0.3s ease;
       }
     </style>
   </head>

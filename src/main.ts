@@ -30,6 +30,8 @@ sortStore
                     .attr("font-size", "14px")
                     .text(data.label);
             }
+            
+            return group; // Return the group to store in Artefact
         }
     )
     .newSort(
@@ -84,6 +86,8 @@ sortStore
                     .attr("font-size", "12px")
                     .text(data.label);
             }
+            
+            return lineGroup; // Return the line group
         },
         (context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
             // initContext: Set up SVG Defs for Arrowhead Markers
@@ -167,7 +171,7 @@ sortStore
             const p3x = V[0] + ux1 * (offset + size) + ux2 * offset;
             const p3y = V[1] + uy1 * (offset + size) + uy2 * offset;
 
-            context.append("path")
+            return context.append("path")
                 .attr("d", `M ${p1x},${p1y} L ${p2x},${p2y} L ${p3x},${p3y}`)
                 .attr("fill", "none")
                 .attr("stroke", "#333")
@@ -258,12 +262,18 @@ try {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
 }
 
-// 7. Render UI Menu
+// 7. Render UI Menu & Interaction
 import { Artefact } from './index';
 
 const menuContent = document.getElementById("menu-content");
 if (menuContent) {
     const allArtefacts = drawing.getArtefacts();
+    
+    // Map to track UI elements associated with each artefact for dimming
+    const uiNodeMap = new Map<Artefact, HTMLElement[]>();
+    for (const art of allArtefacts) {
+        uiNodeMap.set(art, []);
+    }
     
     // Group by sortName
     const grouped = allArtefacts.reduce((acc, artefact) => {
@@ -294,6 +304,51 @@ if (menuContent) {
         headerDiv.appendChild(labelSpan);
         nodeDiv.appendChild(headerDiv);
 
+        // Register this UI node for the artefact
+        const uiNodes = uiNodeMap.get(artefact);
+        if (uiNodes) {
+            uiNodes.push(nodeDiv);
+        }
+
+        // Interaction Logic (Hover)
+        labelSpan.addEventListener("mouseenter", (e) => {
+            // Calculate active set
+            const activeSet = artefact.getSelfAndDependencies();
+
+            // Update Canvas & UI Opacities
+            for (const art of allArtefacts) {
+                const isActive = activeSet.has(art);
+                const opacity = isActive ? 1 : 0.5;
+
+                if (art.svgElement) {
+                    art.svgElement.attr("opacity", opacity);
+                }
+
+                const uiEls = uiNodeMap.get(art);
+                if (uiEls) {
+                    for (const el of uiEls) {
+                        el.style.opacity = opacity.toString();
+                    }
+                }
+            }
+        });
+
+        labelSpan.addEventListener("mouseleave", (e) => {
+            // Reset Canvas & UI Opacities
+            for (const art of allArtefacts) {
+                if (art.svgElement) {
+                    art.svgElement.attr("opacity", 1);
+                }
+
+                const uiEls = uiNodeMap.get(art);
+                if (uiEls) {
+                    for (const el of uiEls) {
+                        el.style.opacity = "1";
+                    }
+                }
+            }
+        });
+
         const depEntries = Object.entries(artefact.dependencies);
         
         if (depEntries.length === 0) {
@@ -308,8 +363,8 @@ if (menuContent) {
             }
             nodeDiv.appendChild(childrenDiv);
 
-            // Toggle logic
-            headerDiv.addEventListener("click", (e) => {
+            // Toggle logic (click anywhere on header except the label)
+            toggleIcon.addEventListener("click", (e) => {
                 e.stopPropagation();
                 nodeDiv.classList.toggle("expanded");
             });

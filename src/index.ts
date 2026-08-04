@@ -2,7 +2,7 @@ export interface SortDefinition {
     name: string;
     dependencies: Record<string, string>;
     attributes: Record<string, string>;
-    drawFunction: (data: any, context: any) => void;
+    drawFunction: (data: any, context: any) => any; // Now returns the element
     initContext?: (context: any) => void;
 }
 
@@ -69,11 +69,13 @@ export class SortStore {
 }
 
 export class Artefact {
+    public svgElement: any = null; // Store the rendered SVG node
+
     constructor(
         public sortName: string,
         public dependencies: Record<string, Artefact>,
         public data: Record<string, any>,
-        private drawFunction: (data: any, context: any) => void
+        private drawFunction: (data: any, context: any) => any
     ) {}
 
     getResolvedData(): any {
@@ -84,8 +86,19 @@ export class Artefact {
         return result;
     }
 
+    getSelfAndDependencies(): Set<Artefact> {
+        const result = new Set<Artefact>();
+        result.add(this);
+        for (const depArtefact of Object.values(this.dependencies)) {
+            for (const nestedDep of depArtefact.getSelfAndDependencies()) {
+                result.add(nestedDep);
+            }
+        }
+        return result;
+    }
+
     draw(context: any): void {
-        this.drawFunction(this.getResolvedData(), context);
+        this.svgElement = this.drawFunction(this.getResolvedData(), context);
     }
 }
 
