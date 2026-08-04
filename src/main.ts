@@ -285,7 +285,7 @@ function renderMenu(): void {
     }, {} as Record<string, typeof allArtefacts>);
 
     // Recursive function to build the tree DOM
-    function buildTreeNode(artefact: Artefact, dependencyKey?: string): HTMLElement {
+    function buildTreeNode(artefact: Artefact, dependencyKey?: string, isTagGroupCtx?: string): HTMLElement {
         const nodeDiv = document.createElement("div");
         nodeDiv.className = "tree-node";
         
@@ -315,7 +315,7 @@ function renderMenu(): void {
         const removeBtn = document.createElement("span");
         removeBtn.className = "remove-btn";
         removeBtn.textContent = "×";
-        removeBtn.title = "Remove artefact";
+        removeBtn.title = isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : "Remove artefact";
 
         headerDiv.appendChild(toggleIcon);
         headerDiv.appendChild(labelSpan);
@@ -331,7 +331,11 @@ function renderMenu(): void {
         // Remove button action
         removeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            drawing.removeArtefact(artefact);
+            if (isTagGroupCtx) {
+                delete artefact.dependencies[isTagGroupCtx];
+            } else {
+                drawing.removeArtefact(artefact);
+            }
             // Redraw Canvas
             svgContext.selectAll("*").remove();
             drawing.draw(svgContext);
@@ -381,17 +385,59 @@ function renderMenu(): void {
         const depEntries = Object.entries(artefact.dependencies).filter(
             ([_, depArt]) => typeof depArt !== "boolean"
         ) as [string, Artefact][];
+
+        const flagEntries = Object.entries(artefact.dependencies).filter(
+            ([_, val]) => val === true
+        );
         
-        if (depEntries.length === 0) {
+        if (depEntries.length === 0 && flagEntries.length === 0) {
             nodeDiv.classList.add("empty");
         } else {
             const childrenDiv = document.createElement("div");
             childrenDiv.className = "node-children";
             
+            // 1. Render Artefact dependencies
             for (const [key, depArt] of depEntries) {
                 const childNode = buildTreeNode(depArt, key);
                 childrenDiv.appendChild(childNode);
             }
+
+            // 2. Render Flag dependencies (tags) as child nodes
+            for (const [flagKey, _] of flagEntries) {
+                const flagNodeDiv = document.createElement("div");
+                flagNodeDiv.className = "tree-node empty";
+
+                const flagHeaderDiv = document.createElement("div");
+                flagHeaderDiv.className = "node-header";
+
+                const flagIcon = document.createElement("span");
+                flagIcon.className = "toggle-icon";
+
+                const flagLabelSpan = document.createElement("span");
+                flagLabelSpan.className = "node-label";
+                flagLabelSpan.textContent = flagKey;
+
+                const flagRemoveBtn = document.createElement("span");
+                flagRemoveBtn.className = "remove-btn";
+                flagRemoveBtn.textContent = "×";
+                flagRemoveBtn.title = `Remove tag '${flagKey}'`;
+
+                flagHeaderDiv.appendChild(flagIcon);
+                flagHeaderDiv.appendChild(flagLabelSpan);
+                flagHeaderDiv.appendChild(flagRemoveBtn);
+                flagNodeDiv.appendChild(flagHeaderDiv);
+
+                flagRemoveBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    delete artefact.dependencies[flagKey];
+                    svgContext.selectAll("*").remove();
+                    drawing.draw(svgContext);
+                    renderMenu();
+                });
+
+                childrenDiv.appendChild(flagNodeDiv);
+            }
+
             nodeDiv.appendChild(childrenDiv);
 
             // Toggle logic (click anywhere on header except the label)
@@ -434,7 +480,7 @@ function renderMenu(): void {
         menuContent.appendChild(groupHeader);
 
         for (const art of artefacts) {
-            const rootNode = buildTreeNode(art);
+            const rootNode = buildTreeNode(art, undefined, tagName);
             rootNode.classList.add("root-node");
             menuContent.appendChild(rootNode);
         }
