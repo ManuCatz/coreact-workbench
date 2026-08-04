@@ -7,6 +7,23 @@ export interface SortDefinition {
 
 export class SortStore {
     private sorts: Map<string, SortDefinition> = new Map();
+    private flags: Map<string, string> = new Map();
+
+    newFlag(name: string, targetSortName: string): this {
+        if (!this.sorts.has(targetSortName)) {
+            throw new Error(`Consistency Check Failed: Cannot attach flag '${name}' to undefined sort '${targetSortName}'.`);
+        }
+        this.flags.set(name, targetSortName);
+        return this;
+    }
+
+    getFlagsForSort(sortName: string): string[] {
+        const result: string[] = [];
+        for (const [flagName, targetSort] of this.flags.entries()) {
+            if (targetSort === sortName) result.push(flagName);
+        }
+        return result;
+    }
 
     newSort(
         name: string,
@@ -97,7 +114,10 @@ export class Drawing {
             }
         }
 
-        // 2. Validate Data Attributes
+        // 2. Validate Data Attributes (Strict Check)
+        const allowedFlags = this.sortStore.getFlagsForSort(sortName);
+
+        // Check required attributes
         for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
             const value = data[attrName];
             if (value === undefined) {
@@ -114,9 +134,22 @@ export class Drawing {
             }
         }
 
-        // Optional 'label' checking
-        if (data.label !== undefined && typeof data.label !== "string") {
-            throw new Error(`Consistency Check Failed: Data attribute 'label' expected to be 'string', but got '${typeof data.label}'.`);
+        // Check for unexpected properties and flag types
+        for (const [key, value] of Object.entries(data)) {
+            if (key === "label") {
+                if (typeof value !== "string") {
+                    throw new Error(`Consistency Check Failed: Data attribute 'label' expected to be 'string', but got '${typeof value}'.`);
+                }
+            } else if (sortDef.attributes[key] !== undefined) {
+                // Already checked above
+                continue;
+            } else if (allowedFlags.includes(key)) {
+                if (typeof value !== "boolean") {
+                    throw new Error(`Consistency Check Failed: Flag '${key}' expected to be 'boolean', but got '${typeof value}'.`);
+                }
+            } else {
+                throw new Error(`Consistency Check Failed: Unexpected data attribute or flag '${key}' provided for sort '${sortName}'.`);
+            }
         }
 
         const artefact = new Artefact(sortName, dependencies, data, sortDef.drawFunction);

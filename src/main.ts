@@ -46,13 +46,28 @@ sortStore
             const srcPos = data.source.position;
             const tgtPos = data.target.position;
 
-            const line = context.insert("line", ":first-child")
+            const lineGroup = context.insert("g", ":first-child");
+
+            lineGroup.append("line")
                 .attr("x1", srcPos[0])
                 .attr("y1", srcPos[1])
                 .attr("x2", tgtPos[0])
                 .attr("y2", tgtPos[1])
-                .attr("stroke", "#999")
-                .attr("stroke-width", data.width);
+                .attr("stroke", data.mono ? "#2c3e50" : "#999")
+                .attr("stroke-width", data.width)
+                .attr("stroke-dasharray", data.mono ? "5,5" : "none");
+
+            if (data.mono) {
+                // Draw a small indicator hook/circle if mono flag is true
+                const midX = (srcPos[0] + tgtPos[0]) / 2;
+                const midY = (srcPos[1] + tgtPos[1]) / 2;
+                
+                lineGroup.append("circle")
+                    .attr("cx", midX)
+                    .attr("cy", midY)
+                    .attr("r", 4)
+                    .attr("fill", "#e74c3c");
+            }
 
             if (data.label) {
                 // Calculate midpoint for label
@@ -69,7 +84,8 @@ sortStore
                     .text(data.label);
             }
         }
-    );
+    )
+    .newFlag("mono", "Edge");
 
 // 3. Create the Drawing instance
 const drawing = new Drawing(sortStore);
@@ -84,7 +100,7 @@ const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2"
 
 // Create edges connecting them
 const e0 = drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" });
-const e1 = drawing.newArtefact("Edge", { source: v1, target: v2 }, { width: 2, label: "e1" });
+const e1 = drawing.newArtefact("Edge", { source: v1, target: v2 }, { width: 2, label: "e1", mono: true }); // Using the mono flag!
 const e2 = drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" });
 
 // 5. Draw the artefacts onto the D3 context
@@ -122,4 +138,16 @@ try {
     drawing.newArtefact("Edge", { source: v0, target: e0 }, { width: 4 });
 } catch (e) {
     console.error("Caught expected error for wrong dependency type:", (e as Error).message);
+}
+
+try {
+    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, unexpected: true });
+} catch (e) {
+    console.error("Caught expected error for unexpected attribute:", (e as Error).message);
+}
+
+try {
+    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, mono: "yes" });
+} catch (e) {
+    console.error("Caught expected error for bad flag type:", (e as Error).message);
 }

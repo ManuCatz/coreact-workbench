@@ -47,3 +47,7 @@ drawing.newArtefact("Vertex", {}, {position: [0, 0], label: "v0"});
   .draw(...);
 ```
 
+
+# Flags
+
+There is an alternative method to newSort called newFlag. In that case, the dependency argument is just a string representing the name of the dependency. The difference is that a flag would appear as a boolean field of its dependency. For example, I may want to define a tag "mono" depending on an edge. Now, in the drawing function of the edge sort, I may test the value of the mono field in the data dictionary. If it is true, I may draw the arrow differently, e.g., with a hook.
