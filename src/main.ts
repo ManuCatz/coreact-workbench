@@ -91,9 +91,9 @@ sortStore
         },
         (context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
             // initContext: Set up SVG Defs for Arrowhead Markers
-            let defs = context.select("defs");
+            let defs = context.select("defs") as any;
             if (defs.empty()) {
-                defs = context.append("defs");
+                defs = context.append("defs") as any;
             }
 
             // Standard arrowhead
@@ -132,8 +132,6 @@ sortStore
             const V = data.p1.source.position;
             const T1 = data.p1.target.position;
             const T2 = data.p2.target.position;
-
-            const L = 15; // Length of corner legs
             
             // Calculate normalized direction vectors
             const dx1 = T1[0] - V[0];
@@ -153,13 +151,6 @@ sortStore
             // size of the pullback corner legs
             const size = 15; 
 
-            // Base point (shifted away from the vertex circle along both vectors)
-            const baseX = V[0] + ux1 * offset + ux2 * offset;
-            const baseY = V[1] + uy1 * offset + uy2 * offset;
-
-            // The three points of the corner (inward pointing)
-            const pnt1 = [baseX + ux1 * size, baseY]; // Point on Leg 1 (Wait, need proper vector addition)
-            
             // Re-calculate points strictly using the unit vectors for arbitrary angles
             const p1x = V[0] + ux1 * offset + ux2 * (offset + size);
             const p1y = V[1] + uy1 * offset + uy2 * (offset + size);
@@ -191,9 +182,9 @@ const v1 = drawing.newArtefact("Vertex", {}, { position: [600, 300], label: "v1"
 const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2" });
 
 // Create edges connecting them
-const e0 = drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" });
-const e1 = drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, label: "e1" }); // Using the mono flag in dependencies!
-const e2 = drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" });
+drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" });
+drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, label: "e1" }); // Using the mono flag in dependencies!
+drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" });
 
 // --- Square Graph for Pullback Demo ---
 console.log("Creating square graph artefacts...");
@@ -238,13 +229,17 @@ try {
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0 }, { width: 4 });
+    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4 });
 } catch (e) {
     console.error("Caught expected error for missing dependency:", (e as Error).message);
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0, target: e0 }, { width: 4 });
+    // Note: passing v1 as 'target' is valid, but we need to trigger an error. Let's pass a Vertex where an Edge is expected.
+    // However, source/target expect Vertex. We will pass sq_v0 (Vertex) as target, which is valid.
+    // Actually, to fail, we should pass an Edge where a Vertex is expected, or missing target.
+    // We will just let it fail for missing 'target' if we only provide 'source'.
+    drawing.newArtefact("Edge", { source: v0 }, { width: 4 });
 } catch (e) {
     console.error("Caught expected error for wrong dependency type:", (e as Error).message);
 }
@@ -263,6 +258,8 @@ try {
 
 // 7. Render UI Menu & Interaction
 import { Artefact } from './index';
+
+let inspectedArtefact: Artefact | null = null;
 
 function renderMenu(): void {
     const menuContent = document.getElementById("menu-content");
@@ -289,6 +286,15 @@ function renderMenu(): void {
         const nodeDiv = document.createElement("div");
         nodeDiv.className = "tree-node";
         
+        if (!artefact || !artefact.data) {
+            const errorSpan = document.createElement("span");
+            errorSpan.className = "node-label";
+            errorSpan.textContent = `${dependencyKey ? dependencyKey + ': ' : ''}Invalid Artefact`;
+            errorSpan.style.color = "red";
+            nodeDiv.appendChild(errorSpan);
+            return nodeDiv;
+        }
+
         const headerDiv = document.createElement("div");
         headerDiv.className = "node-header";
         
@@ -328,6 +334,10 @@ function renderMenu(): void {
             uiNodes.push(nodeDiv);
         }
 
+        if (inspectedArtefact === artefact) {
+            nodeDiv.classList.add("inspected");
+        }
+
         // Remove button action
         removeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -341,6 +351,18 @@ function renderMenu(): void {
             drawing.draw(svgContext);
             // Re-render UI
             renderMenu();
+        });
+
+        // Interaction Logic (Click to Inspect)
+        labelSpan.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (inspectedArtefact === artefact) {
+                inspectedArtefact = null;
+            } else {
+                inspectedArtefact = artefact;
+            }
+            renderMenu();
+            renderInspector();
         });
 
         // Interaction Logic (Hover)
@@ -489,3 +511,178 @@ function renderMenu(): void {
 
 // Initial UI Render
 renderMenu();
+renderInspector();
+
+// 8. Inspector Logic
+function renderInspector() {
+    const inspectorContent = document.getElementById("inspector-content");
+    if (!inspectorContent) return;
+
+    inspectorContent.innerHTML = "";
+
+    if (!inspectedArtefact) {
+        inspectorContent.innerHTML = `<p style="color: #666; font-style: italic;">Select an artefact to inspect.</p>`;
+        return;
+    }
+
+    const sortDef = sortStore.getSort(inspectedArtefact.sortName);
+    if (!sortDef) return;
+
+    // Header
+    const h3 = document.createElement("h3");
+    h3.textContent = inspectedArtefact.sortName;
+    h3.style.marginTop = "0";
+    inspectorContent.appendChild(h3);
+
+    // Helper to redraw on change
+    const triggerUpdate = () => {
+        svgContext.selectAll("*").remove();
+        drawing.draw(svgContext);
+        renderMenu();
+    };
+
+    // Build form fields
+    const form = document.createElement("div");
+
+    // 1. Label Field (Optional string)
+    const labelGroup = document.createElement("div");
+    labelGroup.className = "form-group";
+    labelGroup.innerHTML = `<label>Label</label>`;
+    const labelInput = document.createElement("input");
+    labelInput.type = "text";
+    labelInput.value = inspectedArtefact.data.label || "";
+    labelInput.addEventListener("change", (e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value.trim() === "") {
+            delete inspectedArtefact!.data.label;
+        } else {
+            inspectedArtefact!.data.label = target.value;
+        }
+        triggerUpdate();
+    });
+    labelGroup.appendChild(labelInput);
+    form.appendChild(labelGroup);
+
+    // 2. Data Attributes
+    for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
+        const group = document.createElement("div");
+        
+        if (expectedType === "string" || expectedType === "number") {
+            group.className = "form-group";
+            group.innerHTML = `<label>${attrName} (${expectedType})</label>`;
+            const input = document.createElement("input");
+            input.type = expectedType === "number" ? "number" : "text";
+            if (expectedType === "number") input.step = "any";
+            input.value = inspectedArtefact.data[attrName] !== undefined ? inspectedArtefact.data[attrName] : "";
+            
+            input.addEventListener("change", (e) => {
+                const target = e.target as HTMLInputElement;
+                if (expectedType === "number") {
+                    const parsed = parseFloat(target.value);
+                    if (!isNaN(parsed)) {
+                        inspectedArtefact!.data[attrName] = parsed;
+                        triggerUpdate();
+                    }
+                } else {
+                    inspectedArtefact!.data[attrName] = target.value;
+                    triggerUpdate();
+                }
+            });
+            group.appendChild(input);
+
+        } else if (expectedType === "boolean") {
+            group.className = "form-group checkbox";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = !!inspectedArtefact.data[attrName];
+            
+            const label = document.createElement("label");
+            label.textContent = attrName;
+            
+            input.addEventListener("change", (e) => {
+                const target = e.target as HTMLInputElement;
+                inspectedArtefact!.data[attrName] = target.checked;
+                triggerUpdate();
+            });
+            group.appendChild(input);
+            group.appendChild(label);
+            
+        } else if (expectedType === "position") {
+            group.className = "form-group";
+            group.innerHTML = `<label>${attrName} (x, y)</label>`;
+            
+            const posContainer = document.createElement("div");
+            posContainer.className = "position";
+            
+            const inputX = document.createElement("input");
+            inputX.type = "number";
+            inputX.step = "any";
+            inputX.value = inspectedArtefact.data[attrName] ? inspectedArtefact.data[attrName][0] : 0;
+            
+            const inputY = document.createElement("input");
+            inputY.type = "number";
+            inputY.step = "any";
+            inputY.value = inspectedArtefact.data[attrName] ? inspectedArtefact.data[attrName][1] : 0;
+
+            const updatePosition = () => {
+                const x = parseFloat(inputX.value);
+                const y = parseFloat(inputY.value);
+                if (!isNaN(x) && !isNaN(y)) {
+                    inspectedArtefact!.data[attrName] = [x, y];
+                    triggerUpdate();
+                }
+            };
+            
+            inputX.addEventListener("change", updatePosition);
+            inputY.addEventListener("change", updatePosition);
+            
+            posContainer.appendChild(inputX);
+            posContainer.appendChild(inputY);
+            group.appendChild(posContainer);
+        }
+        
+        form.appendChild(group);
+    }
+
+    // 3. Flags (Fake Dependencies)
+    const flagDependencies = Object.entries(sortDef.dependencies).filter(([_, expectedSort]) => expectedSort === "flag");
+    
+    if (flagDependencies.length > 0) {
+        const flagsHeader = document.createElement("h4");
+        flagsHeader.textContent = "Flags";
+        flagsHeader.style.marginTop = "15px";
+        flagsHeader.style.marginBottom = "10px";
+        flagsHeader.style.fontSize = "0.95rem";
+        flagsHeader.style.color = "#444";
+        form.appendChild(flagsHeader);
+
+        for (const [flagKey, _] of flagDependencies) {
+            const group = document.createElement("div");
+            group.className = "form-group checkbox";
+            
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            // Check if it's explicitly set to true in dependencies
+            input.checked = inspectedArtefact.dependencies[flagKey] === true;
+            
+            const label = document.createElement("label");
+            label.textContent = flagKey;
+            
+            input.addEventListener("change", (e) => {
+                const target = e.target as HTMLInputElement;
+                if (target.checked) {
+                    inspectedArtefact!.dependencies[flagKey] = true as any;
+                } else {
+                    delete inspectedArtefact!.dependencies[flagKey];
+                }
+                triggerUpdate();
+            });
+            
+            group.appendChild(input);
+            group.appendChild(label);
+            form.appendChild(group);
+        }
+    }
+
+    inspectorContent.appendChild(form);
+}

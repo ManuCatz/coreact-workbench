@@ -8,9 +8,9 @@
       body {
         margin: 0;
         display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
+        justify-content: flex-start;
+        align-items: flex-start;
+        min-height: 100vh;
         background-color: #f0f0f0;
         font-family: sans-serif;
       }
@@ -18,9 +18,15 @@
         display: flex;
         gap: 20px;
         align-items: flex-start;
-        max-height: 90vh;
+        max-height: 100vh;
+        max-width: 100vw;
+        overflow: auto;
+        padding: 20px;
+        box-sizing: border-box;
+        margin: 0 auto; /* Center it horizontally if there's space */
       }
-      #menu {
+      #menu, #inspector {
+        flex-shrink: 0;
         width: 250px;
         height: 800px;
         background-color: white;
@@ -29,18 +35,19 @@
         padding: 15px;
         overflow-y: auto;
       }
-      #menu h2 {
+      #menu h2, #inspector h2 {
         margin-top: 0;
         font-size: 1.2rem;
         border-bottom: 1px solid #eee;
         padding-bottom: 10px;
       }
-      #menu h3 {
+      #menu h3, #inspector h3 {
         font-size: 1rem;
         color: #333;
         margin-bottom: 5px;
       }
       #canvas {
+        flex-shrink: 0;
         background-color: white;
         border: 1px solid #ccc;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -112,6 +119,10 @@
       .node-label:hover {
         background-color: #e0e0e0;
       }
+      .tree-node.inspected > .node-header {
+        background-color: #d6eaf8;
+        border-radius: 3px;
+      }
       
       .remove-btn {
         margin-left: auto;
@@ -135,6 +146,43 @@
       #canvas * {
         transition: opacity 0.3s ease;
       }
+      
+      /* Inspector Forms */
+      .form-group {
+        margin-bottom: 12px;
+      }
+      .form-group label {
+        display: block;
+        font-size: 0.85rem;
+        color: #555;
+        margin-bottom: 4px;
+        text-transform: capitalize;
+      }
+      .form-group input[type="text"],
+      .form-group input[type="number"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        font-family: inherit;
+      }
+      .form-group.checkbox {
+        display: flex;
+        align-items: center;
+      }
+      .form-group.checkbox label {
+        display: inline;
+        margin-bottom: 0;
+        margin-left: 6px;
+      }
+      .form-group.position {
+        display: flex;
+        gap: 10px;
+      }
+      .form-group.position input {
+        width: 50%;
+      }
     </style>
   </head>
   <body>
@@ -144,6 +192,12 @@
         <div id="menu-content"></div>
       </div>
       <svg id="canvas" width="800" height="800"></svg>
+      <div id="inspector">
+        <h2>Inspector</h2>
+        <div id="inspector-content">
+          <p style="color: #666; font-style: italic;">Select an artefact to inspect.</p>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
