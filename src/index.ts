@@ -34,12 +34,12 @@ export class SortStore {
         name: string,
         dependencies: Record<string, string>,
         attributes: Record<string, string>,
-        drawFunction: (data: any, context: any) => void,
+        drawFunction: (data: any, context: any) => any, // Ensure this returns any
         initContext?: (context: any) => void
     ): this {
-        // Consistency check: all dependencies must be already defined sorts
+        // Consistency check: all dependencies must be already defined sorts, unless it's a flag
         for (const [depKey, depSortName] of Object.entries(dependencies)) {
-            if (!this.sorts.has(depSortName)) {
+            if (depSortName !== "flag" && !this.sorts.has(depSortName)) {
                 throw new Error(`Consistency Check Failed: Dependency sort '${depSortName}' for dependency '${depKey}' in sort '${name}' is not defined.`);
             }
         }
@@ -73,7 +73,7 @@ export class Artefact {
 
     constructor(
         public sortName: string,
-        public dependencies: Record<string, Artefact>,
+        public dependencies: Record<string, Artefact | boolean>,
         public data: Record<string, any>,
         private drawFunction: (data: any, context: any) => any
     ) {}
@@ -81,7 +81,11 @@ export class Artefact {
     getResolvedData(): any {
         const result = { ...this.data };
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
-            result[key] = depArtefact.getResolvedData();
+            if (typeof depArtefact === "boolean") {
+                result[key] = depArtefact; // Just copy flags directly
+            } else {
+                result[key] = depArtefact.getResolvedData();
+            }
         }
         return result;
     }
@@ -90,8 +94,10 @@ export class Artefact {
         const result = new Set<Artefact>();
         result.add(this);
         for (const depArtefact of Object.values(this.dependencies)) {
-            for (const nestedDep of depArtefact.getSelfAndDependencies()) {
-                result.add(nestedDep);
+            if (typeof depArtefact !== "boolean") {
+                for (const nestedDep of depArtefact.getSelfAndDependencies()) {
+                    result.add(nestedDep);
+                }
             }
         }
         return result;
@@ -109,7 +115,7 @@ export class Drawing {
 
     newArtefact(
         sortName: string,
-        dependencies: Record<string, Artefact>,
+        dependencies: Record<string, Artefact | boolean>,
         data: Record<string, any>
     ): Artefact {
         const sortDef = this.sortStore.getSort(sortName);
@@ -119,12 +125,19 @@ export class Drawing {
 
         // 1. Validate Dependencies
         for (const [depKey, expectedSortName] of Object.entries(sortDef.dependencies)) {
-            const providedArtefact = dependencies[depKey];
-            if (!providedArtefact) {
-                throw new Error(`Consistency Check Failed: Missing dependency '${depKey}' for artefact of sort '${sortName}'.`);
-            }
-            if (providedArtefact.sortName !== expectedSortName) {
-                throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected sort '${expectedSortName}', but got '${providedArtefact.sortName}'.`);
+            const providedValue = dependencies[depKey];
+            
+            if (expectedSortName === "flag") {
+                if (providedValue !== undefined && typeof providedValue !== "boolean") {
+                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected flag (boolean), but got '${typeof providedValue}'.`);
+                }
+            } else {
+                if (!providedValue || typeof providedValue === "boolean") {
+                    throw new Error(`Consistency Check Failed: Missing dependency '${depKey}' for artefact of sort '${sortName}'.`);
+                }
+                if (providedValue.sortName !== expectedSortName) {
+                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected sort '${expectedSortName}', but got '${providedValue.sortName}'.`);
+                }
             }
         }
 
@@ -136,8 +149,6 @@ export class Drawing {
         }
 
         // 2. Validate Data Attributes (Strict Check)
-        const allowedFlags = this.sortStore.getFlagsForSort(sortName);
-
         // Check required attributes
         for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
             const value = data[attrName];
@@ -155,21 +166,14 @@ export class Drawing {
             }
         }
 
-        // Check for unexpected properties and flag types
-        for (const [key, value] of Object.entries(data)) {
+        // Check for unexpected properties
+        for (const key of Object.keys(data)) {
             if (key === "label") {
-                if (typeof value !== "string") {
-                    throw new Error(`Consistency Check Failed: Data attribute 'label' expected to be 'string', but got '${typeof value}'.`);
+                if (typeof data[key] !== "string") {
+                    throw new Error(`Consistency Check Failed: Data attribute 'label' expected to be 'string', but got '${typeof data[key]}'.`);
                 }
-            } else if (sortDef.attributes[key] !== undefined) {
-                // Already checked above
-                continue;
-            } else if (allowedFlags.includes(key)) {
-                if (typeof value !== "boolean") {
-                    throw new Error(`Consistency Check Failed: Flag '${key}' expected to be 'boolean', but got '${typeof value}'.`);
-                }
-            } else {
-                throw new Error(`Consistency Check Failed: Unexpected data attribute or flag '${key}' provided for sort '${sortName}'.`);
+            } else if (sortDef.attributes[key] === undefined) {
+                throw new Error(`Consistency Check Failed: Unexpected data attribute '${key}' provided for sort '${sortName}'.`);
             }
         }
 

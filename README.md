@@ -50,4 +50,21 @@ drawing.newArtefact("Vertex", {}, {position: [0, 0], label: "v0"});
 
 # Flags
 
-There is an alternative method to newSort called newFlag. In that case, the dependency argument is just a string representing the name of the dependency. The difference is that a flag would appear as a boolean field of its dependency. For example, I may want to define a tag "mono" depending on an edge. Now, in the drawing function of the edge sort, I may test the value of the mono field in the data dictionary. If it is true, I may draw the arrow differently, e.g., with a hook.
+Flags are defined as "fake dependencies" directly within the `newSort` method. 
+
+When defining a sort, if a dependency is assigned the value `"flag"` instead of the name of another sort, it becomes an optional boolean attribute for that artefact.
+
+For example, you may want to define a tag "mono" on an edge:
+```javascript
+sortStore.newSort("Edge",
+  {source: "Vertex", target: "Vertex", mono: "flag"}, 
+  {width: "number"}, 
+  (data, context) => {
+    // If data.mono is true, draw the arrow differently
+  });
+```
+
+When instantiating the artefact, the flag is passed alongside the actual dependencies as a boolean value:
+```javascript
+drawing.newArtefact("Edge", {source: v0, target: v1, mono: true}, {width: 1, label: "e0"});
+```

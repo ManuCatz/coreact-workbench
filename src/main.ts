@@ -36,7 +36,7 @@ sortStore
     )
     .newSort(
         "Edge",
-        { source: "Vertex", target: "Vertex" }, // Dependencies
+        { source: "Vertex", target: "Vertex", mono: "flag" }, // Dependencies + flag
         { width: "number" },
         (data: any, context: d3.Selection<d3.BaseType, unknown, HTMLElement, any>) => {
             // Draw an edge (line) from data.source to data.target with given width
@@ -123,7 +123,6 @@ sortStore
                 .attr("fill", "#2c3e50");
         }
     )
-    .newFlag("mono", "Edge")
     .newSort(
         "Pullback",
         { p1: "Edge", p2: "Edge", q1: "Edge", q2: "Edge" },
@@ -193,7 +192,7 @@ const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2"
 
 // Create edges connecting them
 const e0 = drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" });
-const e1 = drawing.newArtefact("Edge", { source: v1, target: v2 }, { width: 2, label: "e1", mono: true }); // Using the mono flag!
+const e1 = drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, label: "e1" }); // Using the mono flag in dependencies!
 const e2 = drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" });
 
 // --- Square Graph for Pullback Demo ---
@@ -251,13 +250,13 @@ try {
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, unexpected: true });
+    drawing.newArtefact("Edge", { source: v0, target: v1, unexpectedFlag: true }, { width: 4 });
 } catch (e) {
-    console.error("Caught expected error for unexpected attribute:", (e as Error).message);
+    console.error("Caught expected error for unexpected dependency/flag:", (e as Error).message);
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, mono: "yes" });
+    drawing.newArtefact("Edge", { source: v0, target: v1, mono: "yes" as any }, { width: 4 });
 } catch (e) {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
 }
@@ -296,7 +295,17 @@ if (menuContent) {
         const labelSpan = document.createElement("span");
         labelSpan.className = "node-label";
         
-        const artefactLabel = artefact.data.label || "(unnamed)";
+        let artefactLabel = artefact.data.label || "(unnamed)";
+        
+        // Extract and append true boolean flags to the label
+        const activeFlags = Object.entries(artefact.dependencies)
+            .filter(([_, val]) => val === true)
+            .map(([key, _]) => key);
+            
+        if (activeFlags.length > 0) {
+            artefactLabel += ` (${activeFlags.join(", ")})`;
+        }
+
         const prefix = dependencyKey ? `${dependencyKey}: ` : "";
         labelSpan.textContent = `${prefix}${artefactLabel}`;
         
@@ -349,7 +358,9 @@ if (menuContent) {
             }
         });
 
-        const depEntries = Object.entries(artefact.dependencies);
+        const depEntries = Object.entries(artefact.dependencies).filter(
+            ([_, depArt]) => typeof depArt !== "boolean"
+        ) as [string, Artefact][];
         
         if (depEntries.length === 0) {
             nodeDiv.classList.add("empty");
