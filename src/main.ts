@@ -396,4 +396,27 @@ if (menuContent) {
             menuContent.appendChild(rootNode);
         }
     }
+
+    // Render Tag Groups (e.g. "mono")
+    const tagGroups: Record<string, Artefact[]> = {};
+    for (const artefact of allArtefacts) {
+        for (const [key, val] of Object.entries(artefact.dependencies)) {
+            if (val === true) {
+                if (!tagGroups[key]) tagGroups[key] = [];
+                tagGroups[key].push(artefact);
+            }
+        }
+    }
+
+    for (const [tagName, artefacts] of Object.entries(tagGroups)) {
+        const groupHeader = document.createElement("h3");
+        groupHeader.textContent = `${tagName} (${artefacts.length})`;
+        menuContent.appendChild(groupHeader);
+
+        for (const art of artefacts) {
+            const rootNode = buildTreeNode(art);
+            rootNode.classList.add("root-node");
+            menuContent.appendChild(rootNode);
+        }
+    }
 }
