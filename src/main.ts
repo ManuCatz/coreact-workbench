@@ -564,12 +564,18 @@ function renderMenu(): void {
         return nodeDiv;
     }
 
+    const focusedId = drawing.getFocusedLayerId();
+
     for (const sortDef of sortStore.getAllSorts()) {
         const artefacts = grouped[sortDef.name] || [];
+        const topLevelArtefacts = focusedId 
+            ? artefacts.filter(art => art.layerId === focusedId) 
+            : artefacts;
+
         const groupHeader = document.createElement("h3");
         
         const titleSpan = document.createElement("span");
-        titleSpan.textContent = `${sortDef.name} (${artefacts.length})`;
+        titleSpan.textContent = `${sortDef.name} (${topLevelArtefacts.length})`;
         
         const addBtn = document.createElement("button");
         addBtn.className = "add-sort-btn";
@@ -593,8 +599,7 @@ function renderMenu(): void {
                 }
             }
 
-            const allLayers = drawing.getAllLayers();
-            const defaultLayerId = allLayers.length > 0 ? allLayers[0].id : "root";
+            const defaultLayerId = focusedId || (drawing.getAllLayers().length > 0 ? drawing.getAllLayers()[0].id : "root");
 
             draftArtefact = {
                 sortName: sortDef.name,
@@ -612,7 +617,7 @@ function renderMenu(): void {
         groupHeader.appendChild(addBtn);
         menuContent.appendChild(groupHeader);
 
-        for (const art of artefacts) {
+        for (const art of topLevelArtefacts) {
             const rootNode = buildTreeNode(art);
             rootNode.classList.add("root-node");
             menuContent.appendChild(rootNode);
@@ -630,11 +635,19 @@ function renderMenu(): void {
     }
 
     for (const [tagName, artefacts] of Object.entries(tagGroups)) {
+        const topLevelTagArtefacts = focusedId 
+            ? artefacts.filter(art => art.layerId === focusedId) 
+            : artefacts;
+
+        if (topLevelTagArtefacts.length === 0 && focusedId) {
+            continue;
+        }
+
         const groupHeader = document.createElement("h3");
-        groupHeader.textContent = `${tagName} (${artefacts.length})`;
+        groupHeader.textContent = `${tagName} (${topLevelTagArtefacts.length})`;
         menuContent.appendChild(groupHeader);
 
-        for (const art of artefacts) {
+        for (const art of topLevelTagArtefacts) {
             const rootNode = buildTreeNode(art, undefined, tagName);
             rootNode.classList.add("root-node");
             menuContent.appendChild(rootNode);
