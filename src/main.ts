@@ -139,13 +139,16 @@ try {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
 }
 
-// Hierarchy Check: Try creating an edge in "root" layer that depends on "p1" (which is in "layer-1")
+// Hierarchy Check: Try creating an edge in "root" layer whose target vertex is in "layer-1"
+let v_layer1: Artefact;
 try {
-    drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, bend: 0, label: "invalid_edge" }, "root");
-    const v_layer1 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "v_top" }, "layer-1");
-    drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, bend: 0, label: "illegal_edge" }, "root");
+    v_layer1 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "v_top" }, "layer-1");
+    drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, bend: 0, label: "invalid_edge" }, "root");
 } catch (e) {
     console.error("Caught expected error for invalid layer hierarchy dependency:", (e as Error).message);
+    if (v_layer1) {
+        drawing.removeArtefact(v_layer1);
+    }
 }
 
 // --- Equality Artefact Tests ---
