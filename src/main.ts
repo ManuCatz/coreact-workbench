@@ -325,7 +325,11 @@ function updateActiveDrawingBanner(): void {
     if (tagEl) {
         const ruleCheck = drawingStore.checkIsRule(drawing);
         if (ruleCheck.isRule) {
-            tagEl.innerHTML = `<span class="rule-badge" title="This drawing satisfies rule conditions">Rule</span>`;
+            if (drawingStore.checkIsFirstOrder(drawing)) {
+                tagEl.innerHTML = `<span class="first-order-badge" title="First-order rule: root layer has only one child">First-Order Rule</span>`;
+            } else {
+                tagEl.innerHTML = `<span class="rule-badge" title="This drawing satisfies rule conditions">Rule</span>`;
+            }
         } else {
             tagEl.innerHTML = "";
         }
@@ -970,12 +974,12 @@ function renderDrawingsStore(): void {
     for (const savedDrawing of drawings) {
         const isActive = savedDrawing.name === activeDrawingName;
         const rowDiv = document.createElement("div");
-        rowDiv.className = `drawing-row${isActive ? " active" : ""}`;
+        rowDiv.className = `drawing-row${isActive ? " active" : ""}${savedDrawing.isFirstOrder ? " first-order" : ""}`;
 
         const titleSpan = document.createElement("span");
         titleSpan.className = "drawing-title";
         titleSpan.textContent = savedDrawing.name;
-        titleSpan.title = `Drawing: ${savedDrawing.name} (${savedDrawing.layers.length} layers, ${savedDrawing.artefacts.length} artefacts)${savedDrawing.isRule ? ' [Rule]' : ''}`;
+        titleSpan.title = `Drawing: ${savedDrawing.name} (${savedDrawing.layers.length} layers, ${savedDrawing.artefacts.length} artefacts)${savedDrawing.isRule ? (savedDrawing.isFirstOrder ? ' [First-Order Rule]' : ' [Rule]') : ''}`;
 
         rowDiv.appendChild(titleSpan);
 
@@ -989,9 +993,15 @@ function renderDrawingsStore(): void {
 
         if (savedDrawing.isRule) {
             const badge = document.createElement("span");
-            badge.className = "rule-badge";
-            badge.textContent = "Rule";
-            badge.title = "This drawing satisfies rule conditions";
+            if (savedDrawing.isFirstOrder) {
+                badge.className = "first-order-badge";
+                badge.textContent = "First-Order";
+                badge.title = "First-order rule: root layer has only one child";
+            } else {
+                badge.className = "rule-badge";
+                badge.textContent = "Rule";
+                badge.title = "This drawing satisfies rule conditions";
+            }
             rowDiv.appendChild(badge);
         }
 
@@ -1119,11 +1129,19 @@ function renderRuleApplications(): void {
             applicationCount++;
 
             const rowDiv = document.createElement("div");
-            rowDiv.className = "rule-app-row";
+            rowDiv.className = `rule-app-row${savedRule.isFirstOrder ? " first-order" : ""}`;
 
             const nameSpan = document.createElement("div");
             nameSpan.className = "rule-app-name";
             nameSpan.textContent = savedRule.name;
+
+            if (savedRule.isFirstOrder) {
+                const badge = document.createElement("span");
+                badge.className = "first-order-badge";
+                badge.textContent = "First-Order";
+                badge.title = "First-order rule: root layer has only one child";
+                nameSpan.appendChild(badge);
+            }
 
             const labels: string[] = [];
             for (const a of matchArtefacts) {

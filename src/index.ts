@@ -858,6 +858,7 @@ export interface SavedDrawing {
     layers: LayerData[];
     artefacts: ArtefactData[];
     isRule: boolean;
+    isFirstOrder: boolean;
 }
 
 export class DrawingStore {
@@ -925,6 +926,23 @@ export class DrawingStore {
         return { isRule: true };
     }
 
+    private static firstOrderFromLayers(layers: Array<{ id: string; parentId: string | null }>): boolean {
+        const rootLayers = layers.filter(l => l.parentId === null);
+        if (rootLayers.length !== 1) {
+            return false;
+        }
+        const root = rootLayers[0];
+        const rootChildren = layers.filter(l => l.parentId === root.id);
+        return rootChildren.length === 1;
+    }
+
+    public checkIsFirstOrder(drawing: Drawing): boolean {
+        if (!this.checkIsRule(drawing).isRule) {
+            return false;
+        }
+        return DrawingStore.firstOrderFromLayers(drawing.getAllLayers());
+    }
+
     public saveDrawing(name: string, drawing: Drawing): SavedDrawing {
         if (!name || !name.trim()) {
             throw new Error("Consistency Check Failed: Drawing name cannot be empty.");
@@ -971,7 +989,8 @@ export class DrawingStore {
             name: trimmedName,
             layers: layersData,
             artefacts: artefactsData,
-            isRule: ruleCheck.isRule
+            isRule: ruleCheck.isRule,
+            isFirstOrder: this.checkIsFirstOrder(drawing)
         };
 
         this.drawings.set(trimmedName, savedDrawing);
@@ -1052,6 +1071,7 @@ export class DrawingStore {
         }
 
         savedDrawing.isRule = this.checkIsRule(drawing).isRule;
+        savedDrawing.isFirstOrder = this.checkIsFirstOrder(drawing);
     }
 
     public exportDrawingJSON(name: string): string {
@@ -1106,7 +1126,8 @@ export class DrawingStore {
             name: trimmedName,
             layers: parsed.layers,
             artefacts: parsed.artefacts,
-            isRule: !!parsed.isRule
+            isRule: !!parsed.isRule,
+            isFirstOrder: !!parsed.isRule && DrawingStore.firstOrderFromLayers(parsed.layers)
         };
 
         this.drawings.set(trimmedName, savedDrawing);
