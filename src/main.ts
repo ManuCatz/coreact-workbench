@@ -60,6 +60,9 @@ const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width
 // The Pullback artefact itself in Child Layer 2 (referencing Layer 1 edges)
 drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {}, "layer-2");
 
+// The Triangle artefact (a 2-cell) in Child Layer 2 (referencing edges e1, e2, e0)
+drawing.newArtefact("Triangle", { "1": e1, "2": e2, o: e0 }, {}, "layer-2");
+
 // Two composable root-layer edges (with their own vertices) so the 'ComposableEdges' rule applies
 const cd0 = drawing.newArtefact("Vertex", {}, { position: [450, 650], label: "cd0" }, "root");
 const cd1 = drawing.newArtefact("Vertex", {}, { position: [550, 650], label: "cd1" }, "root");
@@ -140,7 +143,7 @@ try {
 }
 
 // Hierarchy Check: Try creating an edge in "root" layer whose target vertex is in "layer-1"
-let v_layer1: Artefact;
+let v_layer1: Artefact | undefined;
 try {
     v_layer1 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "v_top" }, "layer-1");
     drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, bend: 0, label: "invalid_edge" }, "root");
