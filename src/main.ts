@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, Layer, DrawingStore } from './index';
+import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -138,6 +138,43 @@ try {
     drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, label: "illegal_edge" }, "root");
 } catch (e) {
     console.error("Caught expected error for invalid layer hierarchy dependency:", (e as Error).message);
+}
+
+// --- Equality Artefact Tests ---
+console.log("--- Equality Artefact Tests ---");
+
+// 1. Create Equality between Vertices v0 and v1 in root layer (unnamed, uses default label 'v0 = v1')
+const eqv0v1 = drawing.newEqualityArtefact([v0, v1], "root");
+console.log("Created equality artefact between v0 and v1 in root layer:", eqv0v1.children.length, "children");
+
+// 2. Automatic merging on same layer: add v2 to equality in root layer
+const eqv1v2 = drawing.newEqualityArtefact([v1, v2], "root");
+console.log("Merged equality artefact in root layer now has children count:", eqv0v1.children.length);
+
+// 3. Different layer: create equality artefact between v2 and sq_v0 in layer-1 (NOT merged with root equality)
+const eqv2sq = drawing.newEqualityArtefact([v2, sq_v0], "layer-1");
+console.log("Equality artefact on layer-1 created separately. Root eq children:", eqv0v1.children.length, "layer-1 eq children:", eqv2sq.children.length);
+
+// 4. Test expected errors for Equality artefacts:
+// Error: Degenerate equality (< 2 elements)
+try {
+    drawing.newEqualityArtefact([v0], "root");
+} catch (e) {
+    console.error("Caught expected error for degenerate equality:", (e as Error).message);
+}
+
+// Error: Different sorts
+try {
+    drawing.newEqualityArtefact([v0, p1 as any], "root");
+} catch (e) {
+    console.error("Caught expected error for different sorts in equality:", (e as Error).message);
+}
+
+// Error: Non-equal dependencies (edges e1 and e0 have different sources/targets)
+try {
+    drawing.newEqualityArtefact([e1, e0], "layer-1");
+} catch (e) {
+    console.error("Caught expected error for non-equal edge dependencies:", (e as Error).message);
 }
 
 // Drawing Store & Rule Validation Tests
@@ -447,7 +484,7 @@ function renderMenu(): void {
         }
     }
 
-    function buildTreeNode(artefact: Artefact, dependencyKey?: string, isTagGroupCtx?: string): HTMLElement {
+    function buildTreeNode(artefact: Artefact, dependencyKey?: string, isTagGroupCtx?: string, parentArtefact?: Artefact): HTMLElement {
         const nodeDiv = document.createElement("div");
         nodeDiv.className = "tree-node";
         
@@ -469,7 +506,26 @@ function renderMenu(): void {
         const labelSpan = document.createElement("span");
         labelSpan.className = "node-label";
         
-        let artefactLabel = artefact.data.label || "(unnamed)";
+        let artefactLabel = artefact.data.label;
+        if (!artefactLabel) {
+            if (artefact.sortName === "Equality") {
+                const children = artefact instanceof EqualityArtefact
+                    ? artefact.children
+                    : Object.values(artefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                artefactLabel = children.map(c => c.data.label || c.sortName).join(" = ");
+            } else {
+                artefactLabel = "(unnamed)";
+            }
+        }
+
+        if (artefact.sortName === "Equality") {
+            const children = artefact instanceof EqualityArtefact
+                ? artefact.children
+                : Object.values(artefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            if (children.length > 0) {
+                artefactLabel += ` [${children[0].sortName}]`;
+            }
+        }
         
         const activeFlags = Object.entries(artefact.dependencies)
             .filter(([_, val]) => val === true)
@@ -516,6 +572,8 @@ function renderMenu(): void {
             e.stopPropagation();
             if (isTagGroupCtx) {
                 delete artefact.dependencies[isTagGroupCtx];
+            } else if (parentArtefact && parentArtefact.sortName === "Equality") {
+                drawing.removeEqualityChild(parentArtefact, artefact);
             } else {
                 drawing.removeArtefact(artefact);
             }
@@ -527,17 +585,30 @@ function renderMenu(): void {
             e.stopPropagation();
 
             if (dependencyPickingFor && draftArtefact) {
-                const sortDef = sortStore.getSort(draftArtefact.sortName);
-                const expectedSort = sortDef?.dependencies[dependencyPickingFor];
-
-                if (expectedSort && artefact.sortName === expectedSort) {
-                    draftArtefact.dependencies[dependencyPickingFor] = artefact;
-                    dependencyPickingFor = null;
-                    renderMenu();
-                    renderInspector();
-                    updateCanvas();
+                if (draftArtefact.sortName === "Equality") {
+                    const existingItems = Object.values(draftArtefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                    if (existingItems.length > 0 && existingItems[0].sortName !== artefact.sortName) {
+                        alert(`Equality artefact requires all elements to be of sort '${existingItems[0].sortName}', but selected '${artefact.sortName}'.`);
+                    } else {
+                        const nextIdx = Object.keys(draftArtefact.dependencies).length;
+                        draftArtefact.dependencies[`${nextIdx}`] = artefact;
+                        renderMenu();
+                        renderInspector();
+                        updateCanvas();
+                    }
                 } else {
-                    alert(`Expected sort '${expectedSort}', but selected '${artefact.sortName}'.`);
+                    const sortDef = sortStore.getSort(draftArtefact.sortName);
+                    const expectedSort = sortDef?.dependencies[dependencyPickingFor];
+
+                    if (expectedSort && artefact.sortName === expectedSort) {
+                        draftArtefact.dependencies[dependencyPickingFor] = artefact;
+                        dependencyPickingFor = null;
+                        renderMenu();
+                        renderInspector();
+                        updateCanvas();
+                    } else {
+                        alert(`Expected sort '${expectedSort}', but selected '${artefact.sortName}'.`);
+                    }
                 }
                 return;
             }
@@ -553,16 +624,14 @@ function renderMenu(): void {
             renderInspector();
         });
 
-        labelSpan.addEventListener("mouseenter", () => {
-            if (!inspectedArtefact) {
-                applyOpacities(artefact);
-            }
+        headerDiv.addEventListener("mouseenter", (e) => {
+            e.stopPropagation();
+            applyOpacities(artefact);
         });
 
-        labelSpan.addEventListener("mouseleave", () => {
-            if (!inspectedArtefact) {
-                applyOpacities(null);
-            }
+        headerDiv.addEventListener("mouseleave", (e) => {
+            e.stopPropagation();
+            applyOpacities(inspectedArtefact);
         });
 
         const depEntries = Object.entries(artefact.dependencies).filter(
@@ -580,7 +649,7 @@ function renderMenu(): void {
             childrenDiv.className = "node-children";
             
             for (const [key, depArt] of depEntries) {
-                const childNode = buildTreeNode(depArt, key);
+                const childNode = buildTreeNode(depArt, key, undefined, artefact);
                 childrenDiv.appendChild(childNode);
             }
 
@@ -840,6 +909,7 @@ function renderDrawingsStore(): void {
 }
 
 // Initial UI Render
+updateCanvas();
 renderDrawingsStore();
 renderLayersTree();
 renderMenu();
@@ -1028,49 +1098,79 @@ function renderInspector() {
         form.appendChild(layerGroup);
 
         // 1. Dependencies Section
-        const nonFlagDeps = Object.entries(sortDef.dependencies).filter(([_, expected]) => expected !== "flag");
-        if (nonFlagDeps.length > 0) {
+        if (draftArtefact.sortName === "Equality") {
             const depsHeader = document.createElement("h4");
-            depsHeader.textContent = "Dependencies";
+            depsHeader.textContent = "Equalized Artefacts (pick >= 2 of same sort)";
             depsHeader.style.margin = "10px 0 5px 0";
             depsHeader.style.fontSize = "0.95rem";
             depsHeader.style.color = "#444";
             form.appendChild(depsHeader);
 
-            for (const [depKey, expectedSort] of nonFlagDeps) {
-                const group = document.createElement("div");
-                group.className = "form-group";
+            const selectedItems = Object.values(draftArtefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            for (let i = 0; i < selectedItems.length; i++) {
+                const item = selectedItems[i];
+                const itemDiv = document.createElement("div");
+                itemDiv.style.fontSize = "0.85rem";
+                itemDiv.style.margin = "3px 0";
+                itemDiv.textContent = `• ${item.data.label || item.sortName} (${item.sortName})`;
+                form.appendChild(itemDiv);
+            }
 
-                const picked = draftArtefact.dependencies[depKey] as Artefact | undefined;
-                const pickedLabel = picked ? (picked.data.label || "(unnamed)") : null;
+            const pickBtn = document.createElement("button");
+            pickBtn.type = "button";
+            pickBtn.className = `pick-dep-btn ${dependencyPickingFor === "Equality" ? "active" : ""}`;
+            pickBtn.textContent = dependencyPickingFor === "Equality" ? "Click artefact in tree..." : "+ Pick Artefact";
+            pickBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                dependencyPickingFor = dependencyPickingFor === "Equality" ? null : "Equality";
+                renderInspector();
+            });
+            form.appendChild(pickBtn);
+        } else {
+            const nonFlagDeps = Object.entries(sortDef.dependencies).filter(([_, expected]) => expected !== "flag");
+            if (nonFlagDeps.length > 0) {
+                const depsHeader = document.createElement("h4");
+                depsHeader.textContent = "Dependencies";
+                depsHeader.style.margin = "10px 0 5px 0";
+                depsHeader.style.fontSize = "0.95rem";
+                depsHeader.style.color = "#444";
+                form.appendChild(depsHeader);
 
-                group.innerHTML = `<label>${depKey} (${expectedSort})</label>`;
+                for (const [depKey, expectedSort] of nonFlagDeps) {
+                    const group = document.createElement("div");
+                    group.className = "form-group";
 
-                const pickDepBtn = document.createElement("button");
-                pickDepBtn.type = "button";
-                pickDepBtn.className = "pick-dep-btn";
-                if (dependencyPickingFor === depKey) {
-                    pickDepBtn.classList.add("active");
-                }
+                    const picked = draftArtefact.dependencies[depKey] as Artefact | undefined;
+                    const pickedLabel = picked ? (picked.data.label || "(unnamed)") : null;
 
-                if (picked) {
-                    pickDepBtn.textContent = `✓ ${pickedLabel}`;
-                } else {
-                    pickDepBtn.textContent = dependencyPickingFor === depKey ? "Select in tree..." : `Pick ${depKey}`;
-                }
+                    group.innerHTML = `<label>${depKey} (${expectedSort})</label>`;
 
-                pickDepBtn.addEventListener("click", (e) => {
-                    e.stopPropagation();
+                    const pickDepBtn = document.createElement("button");
+                    pickDepBtn.type = "button";
+                    pickDepBtn.className = "pick-dep-btn";
                     if (dependencyPickingFor === depKey) {
-                        dependencyPickingFor = null;
-                    } else {
-                        dependencyPickingFor = depKey;
+                        pickDepBtn.classList.add("active");
                     }
-                    renderInspector();
-                });
 
-                group.appendChild(pickDepBtn);
-                form.appendChild(group);
+                    if (picked) {
+                        pickDepBtn.textContent = `✓ ${pickedLabel}`;
+                    } else {
+                        pickDepBtn.textContent = dependencyPickingFor === depKey ? "Select in tree..." : `Pick ${depKey}`;
+                    }
+
+                    pickDepBtn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        if (dependencyPickingFor === depKey) {
+                            dependencyPickingFor = null;
+                        } else {
+                            dependencyPickingFor = depKey;
+                        }
+                        renderInspector();
+                    });
+
+                    group.appendChild(pickDepBtn);
+                    form.appendChild(group);
+                }
             }
         }
 
@@ -1264,10 +1364,15 @@ function renderInspector() {
         });
 
         let isValid = true;
-        for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
-            if (expectedSort !== "flag" && !draftArtefact.dependencies[depKey]) {
-                isValid = false;
-                break;
+        if (draftArtefact.sortName === "Equality") {
+            const children = Object.values(draftArtefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            if (children.length < 2) isValid = false;
+        } else {
+            for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
+                if (expectedSort !== "flag" && !draftArtefact.dependencies[depKey]) {
+                    isValid = false;
+                    break;
+                }
             }
         }
         for (const [attrName, _] of Object.entries(sortDef.attributes)) {
@@ -1321,7 +1426,16 @@ function renderInspector() {
     if (!sortDef) return;
 
     const h3 = document.createElement("h3");
-    h3.textContent = inspectedArtefact.sortName;
+    let titleText = inspectedArtefact.sortName;
+    if (inspectedArtefact.sortName === "Equality") {
+        const children = inspectedArtefact instanceof EqualityArtefact
+            ? inspectedArtefact.children
+            : Object.values(inspectedArtefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+        if (children.length > 0) {
+            titleText += ` [${children[0].sortName}]`;
+        }
+    }
+    h3.textContent = titleText;
     h3.style.marginTop = "0";
     inspectorContent.appendChild(h3);
 
@@ -1366,6 +1480,12 @@ function renderInspector() {
     const labelInput = document.createElement("input");
     labelInput.type = "text";
     labelInput.value = inspectedArtefact.data.label || "";
+    if (inspectedArtefact.sortName === "Equality") {
+        const children = inspectedArtefact instanceof EqualityArtefact
+            ? inspectedArtefact.children
+            : Object.values(inspectedArtefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+        labelInput.placeholder = children.map(c => c.data.label || c.sortName).join(" = ");
+    }
     labelInput.addEventListener("change", (e) => {
         const target = e.target as HTMLInputElement;
         if (target.value.trim() === "") {

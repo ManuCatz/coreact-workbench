@@ -20,6 +20,19 @@ export class Layer {
 export class SortStore {
     private sorts: Map<string, SortDefinition> = new Map();
 
+    constructor() {
+        this.registerBuiltInSorts();
+    }
+
+    private registerBuiltInSorts(): void {
+        this.sorts.set("Equality", {
+            name: "Equality",
+            dependencies: {},
+            attributes: {},
+            drawFunction: () => null
+        });
+    }
+
     getAllSorts(): SortDefinition[] {
         return Array.from(this.sorts.values());
     }
@@ -63,6 +76,7 @@ export class SortStore {
 
     clear(): void {
         this.sorts.clear();
+        this.registerBuiltInSorts();
     }
 }
 
@@ -73,7 +87,7 @@ export class Artefact {
         public sortName: string,
         public dependencies: Record<string, Artefact | boolean>,
         public data: Record<string, any>,
-        private drawFunction: (data: any, context: any) => any,
+        protected drawFunction: (data: any, context: any) => any,
         public layerId: string = "root"
     ) {}
 
@@ -104,6 +118,32 @@ export class Artefact {
 
     draw(context: any): void {
         this.svgElement = this.drawFunction(this.getResolvedData(), context);
+    }
+}
+
+export class EqualityArtefact extends Artefact {
+    public children: Artefact[];
+
+    constructor(
+        children: Artefact[],
+        data: Record<string, any> = {},
+        layerId: string = "root"
+    ) {
+        const deps: Record<string, Artefact | boolean> = {};
+        children.forEach((child, idx) => {
+            deps[`${idx}`] = child;
+        });
+        super("Equality", deps, data, () => null, layerId);
+        this.children = [...children];
+    }
+
+    public setChildren(newChildren: Artefact[]): void {
+        this.children = [...newChildren];
+        const newDeps: Record<string, Artefact | boolean> = {};
+        this.children.forEach((child, idx) => {
+            newDeps[`${idx}`] = child;
+        });
+        this.dependencies = newDeps;
     }
 }
 
@@ -250,7 +290,50 @@ export class Drawing {
             }
         }
 
-        artefact.layerId = targetLayerId;
+        if (artefact.sortName === "Equality") {
+            const children = artefact instanceof EqualityArtefact
+                ? artefact.children
+                : Object.values(artefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            
+            // Validate equality dependencies for the target layer
+            this.validateEqualityDependencies(children, targetLayerId);
+
+            artefact.layerId = targetLayerId;
+
+            // Trigger same-layer merging if there are overlapping equality artefacts on targetLayerId
+            const sameLayerEqualities = this.artefacts.filter(
+                art => art !== artefact && (art instanceof EqualityArtefact || art.sortName === "Equality") && art.layerId === targetLayerId
+            );
+
+            const childrenSet = new Set(children);
+            const overlapping = sameLayerEqualities.filter(art => {
+                const cList = art instanceof EqualityArtefact
+                    ? art.children
+                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                return cList.some(c => childrenSet.has(c));
+            });
+
+            if (overlapping.length > 0) {
+                const combinedSet = new Set<Artefact>(children);
+                for (const ov of overlapping) {
+                    const cList = ov instanceof EqualityArtefact
+                        ? ov.children
+                        : Object.values(ov.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                    cList.forEach(c => combinedSet.add(c));
+                }
+                const combined = Array.from(combinedSet);
+                this.validateEqualityDependencies(combined, targetLayerId);
+
+                if (artefact instanceof EqualityArtefact) {
+                    artefact.setChildren(combined);
+                }
+                for (const ov of overlapping) {
+                    this.artefacts = this.artefacts.filter(a => a !== ov);
+                }
+            }
+        } else {
+            artefact.layerId = targetLayerId;
+        }
     }
 
     public getLayersTopological(): Layer[] {
@@ -274,12 +357,197 @@ export class Drawing {
         return result;
     }
 
+    public areEqual(a: Artefact, b: Artefact, layerId: string): boolean {
+        if (a === b) return true;
+
+        const allowedAncestors = this.getAncestors(layerId);
+        
+        const adj = new Map<Artefact, Set<Artefact>>();
+        for (const art of this.artefacts) {
+            if (art.sortName === "Equality" && allowedAncestors.has(art.layerId)) {
+                let children: Artefact[] = [];
+                if (art instanceof EqualityArtefact) {
+                    children = art.children;
+                } else {
+                    children = Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                }
+                for (let i = 0; i < children.length; i++) {
+                    for (let j = i + 1; j < children.length; j++) {
+                        const c1 = children[i];
+                        const c2 = children[j];
+                        if (!adj.has(c1)) adj.set(c1, new Set());
+                        if (!adj.has(c2)) adj.set(c2, new Set());
+                        adj.get(c1)!.add(c2);
+                        adj.get(c2)!.add(c1);
+                    }
+                }
+            }
+        }
+
+        if (!adj.has(a)) return false;
+
+        const visited = new Set<Artefact>();
+        const queue: Artefact[] = [a];
+        visited.add(a);
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (current === b) return true;
+            const neighbors = adj.get(current);
+            if (neighbors) {
+                for (const neighbor of neighbors) {
+                    if (!visited.has(neighbor)) {
+                        visited.add(neighbor);
+                        queue.push(neighbor);
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public validateEqualityDependencies(artefacts: Artefact[], layerId: string): void {
+        const uniqueArtefacts = Array.from(new Set(artefacts));
+        if (uniqueArtefacts.length < 2) {
+            throw new Error("Consistency Check Failed: An equality artefact must connect at least two distinct artefacts.");
+        }
+
+        const allowedAncestors = this.getAncestors(layerId);
+
+        // 1. Validate sort uniformity & layer hierarchy
+        const firstSort = uniqueArtefacts[0].sortName;
+        for (const art of uniqueArtefacts) {
+            if (art.sortName !== firstSort) {
+                throw new Error(`Consistency Check Failed: All artefacts in an equality artefact must be of the same sort. Found '${firstSort}' and '${art.sortName}'.`);
+            }
+            if (!allowedAncestors.has(art.layerId)) {
+                const artLayerName = this.layers.get(art.layerId)?.name || art.layerId;
+                const targetLayerName = this.layers.get(layerId)?.name || layerId;
+                throw new Error(`Consistency Check Failed: Artefact '${art.data.label || art.sortName}' (in layer '${artLayerName}') is not in layer '${targetLayerName}' or any of its lower ancestor layers.`);
+            }
+        }
+
+        // 2. Pairwise dependency check against first artefact
+        const sortDef = this.sortStore.getSort(firstSort);
+        if (!sortDef) {
+            throw new Error(`Consistency Check Failed: Sort '${firstSort}' is not defined.`);
+        }
+
+        const firstArt = uniqueArtefacts[0];
+        for (let i = 1; i < uniqueArtefacts.length; i++) {
+            const otherArt = uniqueArtefacts[i];
+
+            for (const [depKey, depSortName] of Object.entries(sortDef.dependencies)) {
+                const firstDep = firstArt.dependencies[depKey];
+                const otherDep = otherArt.dependencies[depKey];
+
+                if (depSortName === "flag") {
+                    if (firstDep !== otherDep) {
+                        throw new Error(`Consistency Check Failed: Flag dependency '${depKey}' differs between artefacts in equality artefact.`);
+                    }
+                } else {
+                    if (!firstDep || typeof firstDep === "boolean" || !otherDep || typeof otherDep === "boolean") {
+                        throw new Error(`Consistency Check Failed: Missing artefact dependency '${depKey}' for equality check.`);
+                    }
+                    if (!this.areEqual(firstDep, otherDep, layerId)) {
+                        throw new Error(`Consistency Check Failed: Dependencies '${depKey}' of artefacts '${firstArt.data.label || firstArt.sortName}' and '${otherArt.data.label || otherArt.sortName}' are not equal at layer '${layerId}'.`);
+                    }
+                }
+            }
+        }
+    }
+
+    public newEqualityArtefact(
+        artefacts: Artefact[],
+        layerId?: string,
+        data: Record<string, any> = {}
+    ): EqualityArtefact {
+        const targetLayerId = layerId || (this.layers.size > 0 ? Array.from(this.layers.keys())[0] : "root");
+        if (!this.layers.has(targetLayerId)) {
+            throw new Error(`Consistency Check Failed: Layer '${targetLayerId}' does not exist.`);
+        }
+
+        const inputSet = new Set(artefacts);
+        if (inputSet.size < 2) {
+            throw new Error("Consistency Check Failed: An equality artefact must connect at least two distinct artefacts.");
+        }
+
+        // Search for overlapping equality artefacts on the exact SAME layer
+        const sameLayerEqualities = this.artefacts.filter(
+            art => (art instanceof EqualityArtefact || art.sortName === "Equality") && art.layerId === targetLayerId
+        );
+
+        const overlapping: Artefact[] = [];
+        for (const eq of sameLayerEqualities) {
+            const children = eq instanceof EqualityArtefact 
+                ? eq.children 
+                : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            if (children.some(c => inputSet.has(c))) {
+                overlapping.push(eq);
+            }
+        }
+
+        if (overlapping.length > 0) {
+            const combinedChildrenSet = new Set<Artefact>(inputSet);
+            for (const eq of overlapping) {
+                const children = eq instanceof EqualityArtefact 
+                    ? eq.children 
+                    : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                children.forEach(c => combinedChildrenSet.add(c));
+            }
+
+            const combinedChildren = Array.from(combinedChildrenSet);
+            this.validateEqualityDependencies(combinedChildren, targetLayerId);
+
+            const mainEq = overlapping[0];
+            let resultEq: EqualityArtefact;
+            if (mainEq instanceof EqualityArtefact) {
+                mainEq.setChildren(combinedChildren);
+                Object.assign(mainEq.data, data);
+                resultEq = mainEq;
+            } else {
+                const idx = this.artefacts.indexOf(mainEq);
+                resultEq = new EqualityArtefact(combinedChildren, { ...mainEq.data, ...data }, targetLayerId);
+                if (idx !== -1) this.artefacts[idx] = resultEq;
+            }
+
+            for (let i = 1; i < overlapping.length; i++) {
+                const toRemove = overlapping[i];
+                this.artefacts = this.artefacts.filter(a => a !== toRemove);
+            }
+
+            return resultEq;
+        } else {
+            const initialChildren = Array.from(inputSet);
+            this.validateEqualityDependencies(initialChildren, targetLayerId);
+
+            const newEq = new EqualityArtefact(initialChildren, data, targetLayerId);
+            this.artefacts.push(newEq);
+            return newEq;
+        }
+    }
+
     newArtefact(
         sortName: string,
         dependencies: Record<string, Artefact | boolean>,
         data: Record<string, any>,
         layerId?: string
     ): Artefact {
+        if (sortName === "Equality") {
+            const children: Artefact[] = [];
+            if (Array.isArray(data.children)) {
+                children.push(...data.children);
+            } else {
+                for (const val of Object.values(dependencies)) {
+                    if (val && typeof val !== "boolean") {
+                        children.push(val);
+                    }
+                }
+            }
+            return this.newEqualityArtefact(children, layerId, data);
+        }
+
         const sortDef = this.sortStore.getSort(sortName);
         if (!sortDef) {
             throw new Error(`Consistency Check Failed: Sort '${sortName}' is not defined.`);
@@ -405,6 +673,39 @@ export class Drawing {
 
     removeArtefact(target: Artefact): void {
         this.artefacts = this.artefacts.filter(art => !art.getSelfAndDependencies().has(target));
+        // Remove any equality artefacts whose children count fell below 2
+        this.artefacts = this.artefacts.filter(art => {
+            if (art.sortName === "Equality") {
+                const children = art instanceof EqualityArtefact
+                    ? art.children
+                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                return children.length >= 2;
+            }
+            return true;
+        });
+    }
+
+    removeEqualityChild(eq: Artefact, childToRemove: Artefact): void {
+        if (eq.sortName !== "Equality") return;
+
+        const currentChildren = eq instanceof EqualityArtefact
+            ? eq.children
+            : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+
+        const remaining = currentChildren.filter(c => c !== childToRemove);
+        if (remaining.length < 2) {
+            this.artefacts = this.artefacts.filter(art => art !== eq);
+        } else {
+            if (eq instanceof EqualityArtefact) {
+                eq.setChildren(remaining);
+            } else {
+                const newDeps: Record<string, Artefact | boolean> = {};
+                remaining.forEach((child, idx) => {
+                    newDeps[`${idx}`] = child;
+                });
+                eq.dependencies = newDeps;
+            }
+        }
     }
 
     clear(keepDefaultRoot: boolean = true): void {
