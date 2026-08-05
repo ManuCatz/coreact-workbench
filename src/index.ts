@@ -611,6 +611,67 @@ export class DrawingStore {
         if (remainingArtefacts.length > 0) {
             throw new Error(`Consistency Check Failed: Could not resolve dependencies for drawing '${name}'.`);
         }
+
+        savedDrawing.isRule = this.checkIsRule(drawing).isRule;
+    }
+
+    public exportDrawingJSON(name: string): string {
+        const savedDrawing = this.drawings.get(name);
+        if (!savedDrawing) {
+            throw new Error(`Consistency Check Failed: Drawing '${name}' does not exist.`);
+        }
+        return JSON.stringify(savedDrawing, null, 2);
+    }
+
+    public importDrawingJSON(jsonString: string): SavedDrawing {
+        let parsed: any;
+        try {
+            parsed = JSON.parse(jsonString);
+        } catch (err) {
+            throw new Error(`Consistency Check Failed: Invalid JSON format: ${(err as Error).message}`);
+        }
+
+        if (!parsed || typeof parsed !== "object") {
+            throw new Error("Consistency Check Failed: Invalid JSON structure for drawing.");
+        }
+
+        if (!parsed.name || typeof parsed.name !== "string" || !parsed.name.trim()) {
+            throw new Error("Consistency Check Failed: Missing or invalid 'name' attribute in imported drawing.");
+        }
+
+        if (!Array.isArray(parsed.layers)) {
+            throw new Error("Consistency Check Failed: Missing or invalid 'layers' array in imported drawing.");
+        }
+
+        if (!Array.isArray(parsed.artefacts)) {
+            throw new Error("Consistency Check Failed: Missing or invalid 'artefacts' array in imported drawing.");
+        }
+
+        const trimmedName = parsed.name.trim();
+
+        // Validate layer structures
+        for (const layer of parsed.layers) {
+            if (!layer || typeof layer.id !== "string" || typeof layer.name !== "string") {
+                throw new Error("Consistency Check Failed: Invalid layer structure in imported drawing.");
+            }
+        }
+
+        // Validate artefact structures
+        for (const art of parsed.artefacts) {
+            if (!art || typeof art.id !== "string" || typeof art.sortName !== "string" || typeof art.layerId !== "string" || !art.dependencies || typeof art.dependencies !== "object" || !art.data || typeof art.data !== "object") {
+                throw new Error("Consistency Check Failed: Invalid artefact structure in imported drawing.");
+            }
+        }
+
+        const savedDrawing: SavedDrawing = {
+            name: trimmedName,
+            layers: parsed.layers,
+            artefacts: parsed.artefacts,
+            isRule: !!parsed.isRule
+        };
+
+        this.drawings.set(trimmedName, savedDrawing);
+        return savedDrawing;
     }
 
     public getDrawing(name: string): SavedDrawing | undefined {

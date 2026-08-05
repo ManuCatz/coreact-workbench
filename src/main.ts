@@ -773,6 +773,27 @@ function renderDrawingsStore(): void {
             }
         });
 
+        const exportBtn = document.createElement("button");
+        exportBtn.className = "layer-btn";
+        exportBtn.textContent = "Export";
+        exportBtn.title = `Export drawing '${savedDrawing.name}' to JSON file`;
+        exportBtn.addEventListener("click", () => {
+            try {
+                const jsonStr = drawingStore.exportDrawingJSON(savedDrawing.name);
+                const blob = new Blob([jsonStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${savedDrawing.name.replace(/[^a-z0-9_-]/gi, '_')}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert(`Error exporting drawing:\n${(err as Error).message}`);
+            }
+        });
+
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "layer-btn";
         deleteBtn.style.color = "#e74c3c";
@@ -790,6 +811,7 @@ function renderDrawingsStore(): void {
         });
 
         rowDiv.appendChild(loadBtn);
+        rowDiv.appendChild(exportBtn);
         rowDiv.appendChild(deleteBtn);
         container.appendChild(rowDiv);
     }
@@ -816,6 +838,54 @@ if (saveDrawingBtn) {
                 alert(`Error saving drawing:\n${(err as Error).message}`);
             }
         }
+    });
+}
+
+// Import Drawing Button Listener
+const importDrawingBtn = document.getElementById("import-drawing-btn");
+const drawingJsonUpload = document.getElementById("drawing-json-upload") as HTMLInputElement;
+
+if (importDrawingBtn && drawingJsonUpload) {
+    importDrawingBtn.addEventListener("click", () => {
+        drawingJsonUpload.value = "";
+        drawingJsonUpload.click();
+    });
+
+    drawingJsonUpload.addEventListener("change", (e) => {
+        const files = (e.target as HTMLInputElement).files;
+        if (!files || files.length === 0) return;
+
+        const file = files[0];
+        const reader = new FileReader();
+
+        reader.onload = (event) => {
+            const jsonText = event.target?.result as string;
+            if (!jsonText) return;
+
+            try {
+                const imported = drawingStore.importDrawingJSON(jsonText);
+                if (confirm(`Imported drawing '${imported.name}'. Would you like to load it onto the canvas now?`)) {
+                    drawingStore.loadDrawing(imported.name, drawing);
+                    activeDrawingName = imported.name;
+                    inspectedArtefact = null;
+                    draftArtefact = null;
+                    dependencyPickingFor = null;
+                    if (activePositionPicker) {
+                        activePositionPicker = null;
+                        d3.select("body").style("cursor", "default");
+                    }
+                    updateCanvas();
+                    renderLayersTree();
+                    renderMenu();
+                    renderInspector();
+                }
+                renderDrawingsStore();
+            } catch (err) {
+                alert(`Error importing drawing:\n${(err as Error).message}`);
+            }
+        };
+
+        reader.readAsText(file);
     });
 }
 
