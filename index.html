@@ -52,6 +52,7 @@
         align-items: center;
       }
       .rule-app-row {
+        position: relative;
         padding: 4px 6px;
         background-color: #f8f9fa;
         border: 1px solid #e9ecef;
@@ -72,6 +73,31 @@
       .rule-app-row.first-order:hover {
         border-color: #8e44ad;
         background-color: #ede4f5;
+      }
+      .rule-app-row.not-applyable {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .rule-app-row.not-applyable:hover {
+        background-color: #f8f9fa;
+        border-color: #e9ecef;
+      }
+      .apply-btn {
+        position: absolute;
+        top: 4px;
+        right: 6px;
+        background-color: #2ecc71;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        padding: 2px 8px;
+        font-size: 0.7rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      .apply-btn:hover {
+        background-color: #27ae60;
       }
       .rule-app-name {
         font-weight: 600;

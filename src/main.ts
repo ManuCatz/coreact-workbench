@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications } from './index';
+import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, applyFirstOrderRule } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -254,6 +254,7 @@ const rv2 = ruleDrawing.newArtefact("Vertex", {}, { position: [200, 0], label: "
 ruleDrawing.newArtefact("Edge", { source: rv0, target: rv1 }, { width: 2, bend: 0, label: "re1" }, "root");
 ruleDrawing.newArtefact("Edge", { source: rv1, target: rv2 }, { width: 2, bend: 0, label: "re2" }, "root");
 ruleDrawing.addLayer("rule-pattern", "Rule Pattern", "root");
+ruleDrawing.newArtefact("Edge", { source: rv0, target: rv2 }, { width: 2, bend: 0, label: "re3" }, "rule-pattern");
 drawingStore.saveDrawing("ComposableEdges", ruleDrawing);
 console.log("Saved 'ComposableEdges' rule, isRule =", drawingStore.getDrawing("ComposableEdges")!.isRule);
 
@@ -1108,12 +1109,22 @@ function renderRuleApplications(): void {
 
         let applications: ReturnType<typeof findRuleApplications>;
         try {
-            applications = findRuleApplications(ruleDrawing, drawing);
+            applications = savedRule.isFirstOrder
+                ? findFirstOrderRuleApplications(ruleDrawing, drawing)
+                : findRuleApplications(ruleDrawing, drawing);
         } catch {
             continue;
         }
 
-        const patternArts = ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
+        let patternArts: Artefact[];
+        if (savedRule.isFirstOrder) {
+            const ruleRootId = ruleDrawing.getAllLayers().find(l => l.parentId === null)?.id;
+            patternArts = ruleRootId
+                ? ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === ruleRootId)
+                : ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
+        } else {
+            patternArts = ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
+        }
         const dependedOn = new Set<Artefact>();
         for (const a of patternArts) {
             for (const dep of Object.values(a.dependencies)) {
@@ -1129,7 +1140,7 @@ function renderRuleApplications(): void {
             applicationCount++;
 
             const rowDiv = document.createElement("div");
-            rowDiv.className = `rule-app-row${savedRule.isFirstOrder ? " first-order" : ""}`;
+            rowDiv.className = `rule-app-row${savedRule.isFirstOrder ? " first-order" : " not-applyable"}`;
 
             const nameSpan = document.createElement("div");
             nameSpan.className = "rule-app-name";
@@ -1157,6 +1168,30 @@ function renderRuleApplications(): void {
 
             rowDiv.appendChild(nameSpan);
             rowDiv.appendChild(matchSpan);
+
+            if (savedRule.isFirstOrder) {
+                const applyBtn = document.createElement("button");
+                applyBtn.className = "apply-btn";
+                applyBtn.textContent = "Apply";
+                applyBtn.title = "Apply this first-order rule to the matched artefacts";
+                applyBtn.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
+                    try {
+                        const created = applyFirstOrderRule(ruleDrawing, drawing, app);
+                        console.log(`Applied '${savedRule.name}': added ${created.length} artefact(s).`);
+                        updateCanvas();
+                        renderMenu();
+                        renderInspector();
+                        renderLayersTree();
+                        renderDrawingsStore();
+                    } catch (err) {
+                        alert(`Error applying rule '${savedRule.name}':\n${(err as Error).message}`);
+                    }
+                });
+                rowDiv.appendChild(applyBtn);
+            } else {
+                rowDiv.title = "Only first-order rules can be applied";
+            }
 
             const activeSet = new Set<Artefact>(app.matchedArtefacts.values());
 
