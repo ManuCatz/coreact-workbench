@@ -1129,3 +1129,105 @@ export class DrawingStore {
         this.drawings.clear();
     }
 }
+
+export interface RuleApplication {
+    matchedArtefacts: Map<Artefact, Artefact>;
+}
+
+export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+    const results: RuleApplication[] = [];
+
+    const patternArts = rule.getArtefacts().filter(a => a.sortName !== "Equality");
+    if (patternArts.length === 0) {
+        return results;
+    }
+
+    const equalityConstraints = rule.getArtefacts()
+        .filter(a => a.sortName === "Equality")
+        .map(a => ({
+            children: a instanceof EqualityArtefact
+                ? a.children
+                : Object.values(a.dependencies).filter((v): v is Artefact => typeof v !== "boolean")
+        }))
+        .filter(c => c.children.length >= 2);
+
+    const rootLayerIds = host.getAllLayers()
+        .filter(l => l.parentId === null)
+        .map(l => l.id);
+    const hostCandidates = host.getArtefacts().filter(a => rootLayerIds.includes(a.layerId));
+
+    const patternSet = new Set<Artefact>(patternArts);
+    const ordered: Artefact[] = [];
+    const orderedSet = new Set<Artefact>();
+    while (ordered.length < patternArts.length) {
+        const next = patternArts.find(a =>
+            !orderedSet.has(a) &&
+            Object.values(a.dependencies).every(dep =>
+                typeof dep === "boolean" || !patternSet.has(dep) || orderedSet.has(dep)
+            )
+        );
+        if (!next) break;
+        ordered.push(next);
+        orderedSet.add(next);
+    }
+
+    const assignment = new Map<Artefact, Artefact>();
+    const used = new Set<Artefact>();
+
+    const checkEqualityConstraints = (): boolean => {
+        for (const c of equalityConstraints) {
+            const imgs: Artefact[] = [];
+            for (const child of c.children) {
+                const img = assignment.get(child);
+                if (!img) return false;
+                imgs.push(img);
+            }
+            for (let i = 1; i < imgs.length; i++) {
+                if (!host.areEqual(imgs[0], imgs[i], imgs[0].layerId)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+
+    const backtrack = (i: number): void => {
+        if (i === ordered.length) {
+            if (checkEqualityConstraints()) {
+                results.push({ matchedArtefacts: new Map(assignment) });
+            }
+            return;
+        }
+
+        const a = ordered[i];
+        for (const cand of hostCandidates) {
+            if (cand.sortName !== a.sortName || used.has(cand)) continue;
+
+            let ok = true;
+            for (const [k, dep] of Object.entries(a.dependencies)) {
+                if (typeof dep === "boolean") {
+                    if (dep === true && cand.dependencies[k] !== true) {
+                        ok = false;
+                        break;
+                    }
+                } else if (patternSet.has(dep)) {
+                    const img = assignment.get(dep);
+                    if (img === undefined || cand.dependencies[k] !== img) {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if (!ok) continue;
+
+            assignment.set(a, cand);
+            used.add(cand);
+            backtrack(i + 1);
+            used.delete(cand);
+            assignment.delete(a);
+        }
+    };
+
+    backtrack(0);
+    return results;
+}

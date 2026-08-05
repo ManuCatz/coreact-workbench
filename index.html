@@ -25,7 +25,7 @@
         box-sizing: border-box;
         margin: 0 auto; /* Center it horizontally if there's space */
       }
-      #menu, #inspector {
+      #menu, #inspector, #rules-panel {
         flex-shrink: 0;
         width: 270px;
         height: 800px;
@@ -35,7 +35,7 @@
         padding: 15px;
         overflow-y: auto;
       }
-      #menu h2, #inspector h2 {
+      #menu h2, #inspector h2, #rules-panel h2 {
         margin-top: 0;
         font-size: 1.1rem;
         border-bottom: 1px solid #eee;
@@ -50,6 +50,28 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+      }
+      .rule-app-row {
+        padding: 4px 6px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        margin-top: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s, border-color 0.2s;
+      }
+      .rule-app-row:hover {
+        background-color: #ebf5fb;
+        border-color: #3498db;
+      }
+      .rule-app-name {
+        font-weight: 600;
+        color: #2c3e50;
+      }
+      .rule-app-match {
+        color: #555;
+        margin-top: 2px;
       }
       .add-sort-btn {
         background-color: #2ecc71;
@@ -460,6 +482,12 @@
         <h2>Inspector</h2>
         <div id="inspector-content">
           <p style="color: #666; font-style: italic;">Select an artefact to inspect.</p>
+        </div>
+      </div>
+      <div id="rules-panel">
+        <h2>Applyable Rules</h2>
+        <div id="rules-content">
+          <p style="color: #666; font-style: italic;">No applyable rules.</p>
         </div>
       </div>
     </div>

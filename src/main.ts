@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore } from './index';
+import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -59,6 +59,13 @@ const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width
 
 // The Pullback artefact itself in Child Layer 2 (referencing Layer 1 edges)
 drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {}, "layer-2");
+
+// Two composable root-layer edges (with their own vertices) so the 'ComposableEdges' rule applies
+const cd0 = drawing.newArtefact("Vertex", {}, { position: [450, 650], label: "cd0" }, "root");
+const cd1 = drawing.newArtefact("Vertex", {}, { position: [550, 650], label: "cd1" }, "root");
+const cd2 = drawing.newArtefact("Vertex", {}, { position: [650, 650], label: "cd2" }, "root");
+drawing.newArtefact("Edge", { source: cd0, target: cd1 }, { width: 2, bend: 0, label: "r1" }, "root");
+drawing.newArtefact("Edge", { source: cd1, target: cd2 }, { width: 2, bend: 0, label: "r2" }, "root");
 
 // 5. Canvas and interaction setup
 const svgContext = d3.select("#canvas");
@@ -233,6 +240,25 @@ console.log("Saved 'Rule Drawing Demo', isRule =", savedRuleDrawing.isRule);
 drawingStore.loadDrawing("Rule Drawing Demo", drawing);
 console.log("Successfully loaded 'Rule Drawing Demo' back into canvas.");
 
+// --- Applyable Rules Demo ---
+console.log("--- Applyable Rules Demo ---");
+
+// Build a small rule: two composable edges in the root layer
+const ruleDrawing = new Drawing(sortStore);
+const rv0 = ruleDrawing.newArtefact("Vertex", {}, { position: [0, 0], label: "rv0" }, "root");
+const rv1 = ruleDrawing.newArtefact("Vertex", {}, { position: [100, 0], label: "rv1" }, "root");
+const rv2 = ruleDrawing.newArtefact("Vertex", {}, { position: [200, 0], label: "rv2" }, "root");
+ruleDrawing.newArtefact("Edge", { source: rv0, target: rv1 }, { width: 2, bend: 0, label: "re1" }, "root");
+ruleDrawing.newArtefact("Edge", { source: rv1, target: rv2 }, { width: 2, bend: 0, label: "re2" }, "root");
+ruleDrawing.addLayer("rule-pattern", "Rule Pattern", "root");
+drawingStore.saveDrawing("ComposableEdges", ruleDrawing);
+console.log("Saved 'ComposableEdges' rule, isRule =", drawingStore.getDrawing("ComposableEdges")!.isRule);
+
+const tempRuleDraw = new Drawing(sortStore);
+drawingStore.loadDrawing("ComposableEdges", tempRuleDraw);
+const ruleApps = findRuleApplications(tempRuleDraw, drawing);
+console.log("ComposableEdges applications:", ruleApps.length);
+
 // 7. Render UI Menu & Interaction
 let activeDrawingName: string | null = "Rule Drawing Demo";
 let inspectedArtefact: Artefact | null = null;
@@ -348,6 +374,8 @@ function updateCanvas(): void {
             }
         }
     }
+
+    renderRuleApplications();
 }
 
 function renderLayersTree(): void {
@@ -1032,6 +1060,115 @@ function renderDrawingsStore(): void {
         rowDiv.appendChild(exportBtn);
         rowDiv.appendChild(deleteBtn);
         container.appendChild(rowDiv);
+    }
+
+    renderRuleApplications();
+}
+
+function renderRuleApplications(): void {
+    const container = document.getElementById("rules-content");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const rules = drawingStore.getAllDrawings().filter(d => d.isRule);
+    if (rules.length === 0) {
+        const emptyMsg = document.createElement("div");
+        emptyMsg.style.color = "#888";
+        emptyMsg.style.fontStyle = "italic";
+        emptyMsg.style.fontSize = "0.8rem";
+        emptyMsg.style.marginTop = "4px";
+        emptyMsg.textContent = "No rules saved yet.";
+        container.appendChild(emptyMsg);
+        return;
+    }
+
+    let applicationCount = 0;
+
+    for (const savedRule of rules) {
+        let ruleDrawing: Drawing;
+        try {
+            ruleDrawing = new Drawing(sortStore);
+            drawingStore.loadDrawing(savedRule.name, ruleDrawing);
+        } catch {
+            continue;
+        }
+
+        let applications: ReturnType<typeof findRuleApplications>;
+        try {
+            applications = findRuleApplications(ruleDrawing, drawing);
+        } catch {
+            continue;
+        }
+
+        const patternArts = ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
+        const dependedOn = new Set<Artefact>();
+        for (const a of patternArts) {
+            for (const dep of Object.values(a.dependencies)) {
+                if (typeof dep !== "boolean") {
+                    dependedOn.add(dep);
+                }
+            }
+        }
+        const topLevel = patternArts.filter(a => !dependedOn.has(a));
+        const matchArtefacts = topLevel.length > 0 ? topLevel : patternArts;
+
+        for (const app of applications) {
+            applicationCount++;
+
+            const rowDiv = document.createElement("div");
+            rowDiv.className = "rule-app-row";
+
+            const nameSpan = document.createElement("div");
+            nameSpan.className = "rule-app-name";
+            nameSpan.textContent = savedRule.name;
+
+            const labels: string[] = [];
+            for (const a of matchArtefacts) {
+                const img = app.matchedArtefacts.get(a);
+                if (img) {
+                    labels.push(img.data.label || img.sortName);
+                }
+            }
+
+            const matchSpan = document.createElement("div");
+            matchSpan.className = "rule-app-match";
+            matchSpan.textContent = labels.length > 0 ? labels.join(", ") : "(no labelled artefacts)";
+
+            rowDiv.appendChild(nameSpan);
+            rowDiv.appendChild(matchSpan);
+
+            const activeSet = new Set<Artefact>(app.matchedArtefacts.values());
+
+            rowDiv.addEventListener("mouseenter", () => {
+                if (mergeMode) return;
+                for (const art of drawing.getArtefacts()) {
+                    const opacity = activeSet.has(art) ? 1 : 0.5;
+                    if (art.svgElement) {
+                        art.svgElement.attr("opacity", opacity);
+                    }
+                }
+            });
+
+            rowDiv.addEventListener("mouseleave", () => {
+                for (const art of drawing.getArtefacts()) {
+                    if (art.svgElement) {
+                        art.svgElement.attr("opacity", 1);
+                    }
+                }
+            });
+
+            container.appendChild(rowDiv);
+        }
+    }
+
+    if (applicationCount === 0) {
+        const emptyMsg = document.createElement("div");
+        emptyMsg.style.color = "#888";
+        emptyMsg.style.fontStyle = "italic";
+        emptyMsg.style.fontSize = "0.8rem";
+        emptyMsg.style.marginTop = "4px";
+        emptyMsg.textContent = "No applyable rules.";
+        container.appendChild(emptyMsg);
     }
 }
 
