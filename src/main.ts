@@ -254,13 +254,29 @@ function renderLayersTree(): void {
         const itemDiv = document.createElement("div");
         itemDiv.className = `layer-item ${layer.parentId === null ? "root-layer" : ""}`;
 
+        const isEffectivelyVisible = drawing.isLayerVisible(layer.id);
+
         const rowDiv = document.createElement("div");
-        rowDiv.className = `layer-row ${focusedId === layer.id ? "focused" : ""}`;
+        rowDiv.className = `layer-row ${focusedId === layer.id ? "focused" : ""} ${!isEffectivelyVisible ? "layer-hidden" : ""}`;
 
         const titleSpan = document.createElement("span");
         titleSpan.className = "layer-title";
         titleSpan.textContent = layer.name;
-        titleSpan.title = `ID: ${layer.id}`;
+        titleSpan.title = `ID: ${layer.id}${!isEffectivelyVisible ? " (hidden)" : ""}`;
+
+        const hideBtn = document.createElement("button");
+        hideBtn.className = `layer-btn hide-btn ${!layer.visible ? "active" : ""}`;
+        hideBtn.textContent = layer.visible ? "Hide" : "Show";
+        hideBtn.title = layer.visible
+            ? (isEffectivelyVisible ? "Hide this layer on canvas" : "Hide layer (hidden by parent)")
+            : "Show this layer on canvas";
+        hideBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            layer.visible = !layer.visible;
+            updateCanvas();
+            renderLayersTree();
+            renderMenu();
+        });
 
         const focusBtn = document.createElement("button");
         focusBtn.className = `layer-btn focus-btn ${focusedId === layer.id ? "active" : ""}`;
@@ -339,6 +355,7 @@ function renderLayersTree(): void {
         });
 
         rowDiv.appendChild(titleSpan);
+        rowDiv.appendChild(hideBtn);
         rowDiv.appendChild(focusBtn);
         rowDiv.appendChild(colorCheckbox);
         rowDiv.appendChild(colorInput);
@@ -468,7 +485,12 @@ function renderMenu(): void {
         const layerObj = drawing.getLayer(artefact.layerId);
         const layerBadge = document.createElement("span");
         layerBadge.className = "layer-badge";
-        layerBadge.textContent = layerObj ? layerObj.name : artefact.layerId;
+        const isLayerVis = layerObj ? drawing.isLayerVisible(layerObj.id) : true;
+        layerBadge.textContent = layerObj ? layerObj.name + (isLayerVis ? "" : " (hidden)") : artefact.layerId;
+        if (!isLayerVis) {
+            layerBadge.style.backgroundColor = "#f5b7b1";
+            layerBadge.style.color = "#78281f";
+        }
         
         const removeBtn = document.createElement("span");
         removeBtn.className = "remove-btn";

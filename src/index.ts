@@ -12,7 +12,8 @@ export class Layer {
         public name: string,
         public parentId: string | null = null,
         public color: string = "#3498db",
-        public colorEnabled: boolean = false
+        public colorEnabled: boolean = false,
+        public visible: boolean = true
     ) {}
 }
 
@@ -120,7 +121,8 @@ export class Drawing {
         name: string,
         parentId: string | null = null,
         color: string = "#3498db",
-        colorEnabled: boolean = false
+        colorEnabled: boolean = false,
+        visible: boolean = true
     ): Layer {
         if (this.layers.has(id)) {
             throw new Error(`Layer with id '${id}' already exists.`);
@@ -128,9 +130,21 @@ export class Drawing {
         if (parentId !== null && !this.layers.has(parentId)) {
             throw new Error(`Parent layer '${parentId}' does not exist.`);
         }
-        const layer = new Layer(id, name, parentId, color, colorEnabled);
+        const layer = new Layer(id, name, parentId, color, colorEnabled, visible);
         this.layers.set(id, layer);
         return layer;
+    }
+
+    public isLayerVisible(layerId: string): boolean {
+        let current: string | null = layerId;
+        while (current && this.layers.has(current)) {
+            const layer = this.layers.get(current)!;
+            if (!layer.visible) {
+                return false;
+            }
+            current = layer.parentId;
+        }
+        return true;
     }
 
     public getLayer(id: string): Layer | undefined {
@@ -358,6 +372,10 @@ export class Drawing {
                 .attr("class", "layer-group")
                 .attr("data-layer-id", layer.id);
 
+            if (!this.isLayerVisible(layer.id)) {
+                layerGroup.attr("display", "none");
+            }
+
             // Set Opacity based on Focus
             if (this.focusedLayerId !== null) {
                 const opacity = (layer.id === this.focusedLayerId) ? 1.0 : 0.5;
@@ -405,6 +423,7 @@ export interface LayerData {
     parentId: string | null;
     color: string;
     colorEnabled: boolean;
+    visible?: boolean;
 }
 
 export interface ArtefactData {
@@ -506,7 +525,8 @@ export class DrawingStore {
             name: l.name,
             parentId: l.parentId,
             color: l.color,
-            colorEnabled: l.colorEnabled
+            colorEnabled: l.colorEnabled,
+            visible: l.visible
         }));
 
         const artefactsData: ArtefactData[] = artefacts.map(art => {
@@ -555,7 +575,7 @@ export class DrawingStore {
             for (let i = 0; i < remainingLayers.length; i++) {
                 const lData = remainingLayers[i];
                 if (lData.parentId === null || drawing.getLayer(lData.parentId) !== undefined) {
-                    drawing.addLayer(lData.id, lData.name, lData.parentId, lData.color, lData.colorEnabled);
+                    drawing.addLayer(lData.id, lData.name, lData.parentId, lData.color, lData.colorEnabled, lData.visible ?? true);
                     remainingLayers.splice(i, 1);
                     layerProgress = true;
                     break;
