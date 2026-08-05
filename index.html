@@ -391,6 +391,25 @@
         background-color: #bdc3c7;
         cursor: not-allowed;
       }
+      .btn-merge {
+        background-color: #9b59b6;
+        color: white;
+      }
+      .btn-merge:hover:not(:disabled) {
+        background-color: #8e44ad;
+      }
+      .btn-merge:disabled {
+        background-color: #bdc3c7;
+        cursor: not-allowed;
+      }
+      .merge-preview-box {
+        margin-top: 12px;
+        padding: 10px;
+        background-color: #f4ecf7;
+        border: 1px solid #d7bde2;
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
     </style>
   </head>
   <body>
@@ -430,7 +449,10 @@
           <div id="layers-content"></div>
         </div>
 
-        <h3 style="margin-top: 10px; font-size: 0.9rem; color: #555;">Artefacts</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; margin-bottom: 5px;">
+          <h3 style="margin: 0; font-size: 0.9rem; color: #555;">Artefacts</h3>
+          <button id="merge-artefacts-btn" class="layer-btn" style="background-color: #9b59b6; color: white; border: none; font-weight: bold;" title="Merge two artefacts with identical dependencies">Merge</button>
+        </div>
         <div id="menu-content"></div>
       </div>
       <svg id="canvas" width="800" height="800"></svg>

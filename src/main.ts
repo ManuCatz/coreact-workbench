@@ -35,11 +35,12 @@ const v1 = drawing.newArtefact("Vertex", {}, { position: [600, 300], label: "v1"
 const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2" }, "root");
 
 // Move edge e0 into the Root Layer (source & target v0, v1 are in Root)
-drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, label: "e0" }, "root");
+const e0 = drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, bend: 0, label: "e0" }, "root");
 
 // Edges e1, e2 in Child Layer 1 (referencing Root Layer vertices v0, v1, v2)
-drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, label: "e1" }, "layer-1");
-drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, label: "e2" }, "layer-1");
+const e1 = drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, bend: 30, label: "e1" }, "layer-1");
+const e2 = drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, bend: 0, label: "e2" }, "layer-1");
+console.log("Created demo edges e0, e1, e2:", e0.data.label, e1.data.label, e2.data.label);
 
 // --- Square Graph for Pullback Demo ---
 console.log("Creating square graph artefacts across layers...");
@@ -51,10 +52,10 @@ const sq_v2 = drawing.newArtefact("Vertex", {}, { position: [400, 550], label: "
 const sq_v3 = drawing.newArtefact("Vertex", {}, { position: [600, 550], label: "D" }, "root");
 
 // Projections p1, p2, q1, q2 in Child Layer 1
-const p1 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "p1" }, "layer-1");
-const p2 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v2 }, { width: 2, label: "p2" }, "layer-1");
-const q1 = drawing.newArtefact("Edge", { source: sq_v1, target: sq_v3 }, { width: 2, label: "q1" }, "layer-1");
-const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width: 2, label: "q2" }, "layer-1");
+const p1 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, bend: 0, label: "p1" }, "layer-1");
+const p2 = drawing.newArtefact("Edge", { source: sq_v0, target: sq_v2 }, { width: 2, bend: 0, label: "p2" }, "layer-1");
+const q1 = drawing.newArtefact("Edge", { source: sq_v1, target: sq_v3 }, { width: 2, bend: 0, label: "q1" }, "layer-1");
+const q2 = drawing.newArtefact("Edge", { source: sq_v2, target: sq_v3 }, { width: 2, bend: 0, label: "q2" }, "layer-1");
 
 // The Pullback artefact itself in Child Layer 2 (referencing Layer 1 edges)
 drawing.newArtefact("Pullback", { p1, p2, q1, q2 }, {}, "layer-2");
@@ -108,34 +109,34 @@ try {
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4 });
+    drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, bend: 0 });
 } catch (e) {
     console.error("Caught expected error for missing dependency:", (e as Error).message);
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0 }, { width: 4 });
+    drawing.newArtefact("Edge", { source: v0 }, { width: 4, bend: 0 });
 } catch (e) {
     console.error("Caught expected error for wrong dependency type:", (e as Error).message);
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0, target: v1, unexpectedFlag: true }, { width: 4 });
+    drawing.newArtefact("Edge", { source: v0, target: v1, unexpectedFlag: true }, { width: 4, bend: 0 });
 } catch (e) {
     console.error("Caught expected error for unexpected dependency/flag:", (e as Error).message);
 }
 
 try {
-    drawing.newArtefact("Edge", { source: v0, target: v1, mono: "yes" as any }, { width: 4 });
+    drawing.newArtefact("Edge", { source: v0, target: v1, mono: "yes" as any }, { width: 4, bend: 0 });
 } catch (e) {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
 }
 
 // Hierarchy Check: Try creating an edge in "root" layer that depends on "p1" (which is in "layer-1")
 try {
-    drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "invalid_edge" }, "root");
+    drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, bend: 0, label: "invalid_edge" }, "root");
     const v_layer1 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "v_top" }, "layer-1");
-    drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, label: "illegal_edge" }, "root");
+    drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, bend: 0, label: "illegal_edge" }, "root");
 } catch (e) {
     console.error("Caught expected error for invalid layer hierarchy dependency:", (e as Error).message);
 }
@@ -149,7 +150,7 @@ console.log("Created equality artefact between v0 and v1 in root layer:", eqv0v1
 
 // 2. Automatic merging on same layer: add v2 to equality in root layer
 const eqv1v2 = drawing.newEqualityArtefact([v1, v2], "root");
-console.log("Merged equality artefact in root layer now has children count:", eqv0v1.children.length);
+console.log("Merged equality artefact in root layer now has children count:", eqv0v1.children.length, "eqv1v2:", eqv1v2.children.length);
 
 // 3. Different layer: create equality artefact between v2 and sq_v0 in layer-1 (NOT merged with root equality)
 const eqv2sq = drawing.newEqualityArtefact([v2, sq_v0], "layer-1");
@@ -176,6 +177,37 @@ try {
 } catch (e) {
     console.error("Caught expected error for non-equal edge dependencies:", (e as Error).message);
 }
+
+// --- Artefact Merge Tests ---
+console.log("--- Artefact Merge Tests ---");
+
+const test_v0 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "tv0" }, "root");
+const test_v1 = drawing.newArtefact("Vertex", {}, { position: [200, 200], label: "tv1" }, "root");
+const test_e0 = drawing.newArtefact("Edge", { source: test_v0, target: sq_v1 }, { width: 2, bend: 0, label: "te0" }, "layer-1");
+
+console.log("Are dependencies equal (test_v0 & test_v1):", drawing.areDependenciesEqual(test_v0, test_v1));
+
+const mergedVertex = drawing.mergeArtefacts(test_v0, test_v1);
+console.log("Merged vertex label (expected 'tv0, tv1'):", mergedVertex.data.label);
+console.log("Merged vertex position (kept 2nd: [200, 200]):", mergedVertex.data.position);
+console.log("Edge source updated to merged vertex:", test_e0.dependencies.source === mergedVertex);
+console.log("Old vertex removed:", !drawing.getArtefacts().includes(test_v0));
+
+try {
+    drawing.mergeArtefacts(mergedVertex, test_e0);
+} catch (e) {
+    console.error("Caught expected error merging different sorts/dependencies:", (e as Error).message);
+}
+
+try {
+    drawing.mergeArtefacts(mergedVertex, mergedVertex);
+} catch (e) {
+    console.error("Caught expected error merging artefact with itself:", (e as Error).message);
+}
+
+// Clean up test edge and merged vertex for initial canvas state
+drawing.removeArtefact(test_e0);
+drawing.removeArtefact(mergedVertex);
 
 // Drawing Store & Rule Validation Tests
 console.log("--- Drawing Store & Rule Validation Tests ---");
@@ -213,6 +245,46 @@ let draftArtefact: {
 } | null = null;
 
 let dependencyPickingFor: string | null = null;
+
+let mergeMode: boolean = false;
+let mergeFirstArtefact: Artefact | null = null;
+let mergeSecondArtefact: Artefact | null = null;
+let mergePickingFor: "first" | "second" | null = null;
+
+function startMergeMode(preselectFirst: Artefact | null = null): void {
+    draftArtefact = null;
+    dependencyPickingFor = null;
+    if (activePositionPicker) {
+        activePositionPicker.pickBtn.style.backgroundColor = "";
+        activePositionPicker = null;
+        d3.select("body").style("cursor", "default");
+    }
+
+    mergeMode = true;
+    if (preselectFirst && drawing.getArtefacts().includes(preselectFirst)) {
+        mergeFirstArtefact = preselectFirst;
+        mergeSecondArtefact = null;
+        mergePickingFor = "second";
+    } else {
+        mergeFirstArtefact = null;
+        mergeSecondArtefact = null;
+        mergePickingFor = "first";
+    }
+
+    renderMenu();
+    renderInspector();
+    updateCanvas();
+}
+
+function cancelMergeMode(): void {
+    mergeMode = false;
+    mergeFirstArtefact = null;
+    mergeSecondArtefact = null;
+    mergePickingFor = null;
+    renderMenu();
+    renderInspector();
+    updateCanvas();
+}
 
 function updateActiveDrawingBanner(): void {
     const nameEl = document.getElementById("active-drawing-name");
@@ -451,6 +523,31 @@ function renderMenu(): void {
     }, {} as Record<string, typeof allArtefacts>);
 
     function applyOpacities(target: Artefact | null) {
+        if (mergeMode) {
+            for (const art of allArtefacts) {
+                let opacity = 0.35;
+                if (art === mergeFirstArtefact || art === mergeSecondArtefact) {
+                    opacity = 1.0;
+                } else if (mergeFirstArtefact && drawing.areDependenciesEqual(mergeFirstArtefact, art)) {
+                    opacity = 0.85;
+                } else if (!mergeFirstArtefact) {
+                    opacity = 0.85;
+                }
+
+                if (art.svgElement) {
+                    art.svgElement.attr("opacity", opacity);
+                }
+
+                const uiEls = uiNodeMap.get(art);
+                if (uiEls) {
+                    for (const el of uiEls) {
+                        el.style.opacity = opacity.toString();
+                    }
+                }
+            }
+            return;
+        }
+
         if (!target) {
             for (const art of allArtefacts) {
                 if (art.svgElement) {
@@ -564,7 +661,7 @@ function renderMenu(): void {
             uiNodes.push(nodeDiv);
         }
 
-        if (inspectedArtefact === artefact) {
+        if (inspectedArtefact === artefact || (mergeMode && (mergeFirstArtefact === artefact || mergeSecondArtefact === artefact))) {
             nodeDiv.classList.add("inspected");
         }
 
@@ -583,6 +680,32 @@ function renderMenu(): void {
 
         labelSpan.addEventListener("click", (e) => {
             e.stopPropagation();
+
+            if (mergeMode) {
+                if (mergePickingFor === "first" || !mergeFirstArtefact) {
+                    mergeFirstArtefact = artefact;
+                    if (mergeSecondArtefact === artefact) {
+                        mergeSecondArtefact = null;
+                    }
+                    mergePickingFor = "second";
+                    renderMenu();
+                    renderInspector();
+                    updateCanvas();
+                } else if (mergePickingFor === "second" || mergeFirstArtefact) {
+                    if (artefact === mergeFirstArtefact) {
+                        alert("Cannot merge an artefact with itself.");
+                    } else if (!drawing.areDependenciesEqual(mergeFirstArtefact, artefact)) {
+                        alert(`Cannot merge: Artefact '${artefact.data.label || artefact.sortName}' does not have matching dependencies.`);
+                    } else {
+                        mergeSecondArtefact = artefact;
+                        mergePickingFor = null;
+                        renderMenu();
+                        renderInspector();
+                        updateCanvas();
+                    }
+                }
+                return;
+            }
 
             if (dependencyPickingFor && draftArtefact) {
                 if (draftArtefact.sortName === "Equality") {
@@ -719,13 +842,17 @@ function renderMenu(): void {
         addBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             inspectedArtefact = null;
+            mergeMode = false;
+            mergeFirstArtefact = null;
+            mergeSecondArtefact = null;
+            mergePickingFor = null;
 
             const initialData: Record<string, any> = {};
             for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
                 if (expectedType === "position") {
                     initialData[attrName] = [300, 300];
                 } else if (expectedType === "number") {
-                    initialData[attrName] = 2;
+                    initialData[attrName] = attrName === "bend" ? 0 : 2;
                 } else if (expectedType === "boolean") {
                     initialData[attrName] = false;
                 } else if (expectedType === "string") {
@@ -908,6 +1035,18 @@ function renderDrawingsStore(): void {
     }
 }
 
+// Merge Artefacts Button Listener
+const mergeArtefactsBtn = document.getElementById("merge-artefacts-btn");
+if (mergeArtefactsBtn) {
+    mergeArtefactsBtn.addEventListener("click", () => {
+        if (mergeMode) {
+            cancelMergeMode();
+        } else {
+            startMergeMode(inspectedArtefact);
+        }
+    });
+}
+
 // Initial UI Render
 updateCanvas();
 renderDrawingsStore();
@@ -1060,6 +1199,191 @@ function renderInspector() {
     if (!inspectorContent) return;
 
     inspectorContent.innerHTML = "";
+
+    // Merge Mode View
+    if (mergeMode) {
+        const h3 = document.createElement("h3");
+        h3.textContent = "Merge Artefacts";
+        h3.style.marginTop = "0";
+        inspectorContent.appendChild(h3);
+
+        const helpText = document.createElement("p");
+        helpText.style.color = "#666";
+        helpText.style.fontSize = "0.82rem";
+        helpText.style.marginTop = "4px";
+        helpText.style.marginBottom = "12px";
+        helpText.textContent = "Select two artefacts of the same sort with identical dependencies to merge them.";
+        inspectorContent.appendChild(helpText);
+
+        const form = document.createElement("div");
+
+        // 1. First Artefact
+        const group1 = document.createElement("div");
+        group1.className = "form-group";
+        group1.innerHTML = `<label>1st Artefact (to be removed)</label>`;
+
+        const pick1Btn = document.createElement("button");
+        pick1Btn.type = "button";
+        pick1Btn.className = `pick-dep-btn ${mergePickingFor === "first" ? "active" : ""}`;
+        if (mergeFirstArtefact) {
+            const l1 = mergeFirstArtefact.data.label || "(unnamed)";
+            pick1Btn.textContent = `1st: ${l1} (${mergeFirstArtefact.sortName})`;
+        } else {
+            pick1Btn.textContent = mergePickingFor === "first" ? "Click artefact in tree..." : "Pick 1st Artefact";
+        }
+
+        pick1Btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            mergePickingFor = mergePickingFor === "first" ? null : "first";
+            renderInspector();
+            renderMenu();
+        });
+        group1.appendChild(pick1Btn);
+        form.appendChild(group1);
+
+        // 2. Second Artefact
+        const group2 = document.createElement("div");
+        group2.className = "form-group";
+        group2.innerHTML = `<label>2nd Artefact (datafields kept)</label>`;
+
+        if (mergeFirstArtefact) {
+            const candidates = drawing.getArtefacts().filter(art =>
+                art !== mergeFirstArtefact && drawing.areDependenciesEqual(mergeFirstArtefact!, art)
+            );
+
+            if (candidates.length === 0) {
+                const noCandMsg = document.createElement("div");
+                noCandMsg.style.fontSize = "0.8rem";
+                noCandMsg.style.color = "#e74c3c";
+                noCandMsg.style.fontStyle = "italic";
+                noCandMsg.style.marginTop = "4px";
+                noCandMsg.textContent = "No other artefacts with matching dependencies found.";
+                group2.appendChild(noCandMsg);
+            } else {
+                const selectEl = document.createElement("select");
+                const defaultOpt = document.createElement("option");
+                defaultOpt.value = "";
+                defaultOpt.textContent = "-- Select 2nd Artefact --";
+                selectEl.appendChild(defaultOpt);
+
+                for (let i = 0; i < candidates.length; i++) {
+                    const cand = candidates[i];
+                    const opt = document.createElement("option");
+                    opt.value = i.toString();
+                    const layerObj = drawing.getLayer(cand.layerId);
+                    opt.textContent = `${cand.data.label || "(unnamed)"} (${cand.sortName} in '${layerObj ? layerObj.name : cand.layerId}')`;
+                    if (cand === mergeSecondArtefact) opt.selected = true;
+                    selectEl.appendChild(opt);
+                }
+
+                selectEl.addEventListener("change", (e) => {
+                    const val = (e.target as HTMLSelectElement).value;
+                    if (val !== "") {
+                        const idx = parseInt(val, 10);
+                        mergeSecondArtefact = candidates[idx];
+                        mergePickingFor = null;
+                    } else {
+                        mergeSecondArtefact = null;
+                    }
+                    renderMenu();
+                    renderInspector();
+                    updateCanvas();
+                });
+                group2.appendChild(selectEl);
+            }
+
+            const pick2Btn = document.createElement("button");
+            pick2Btn.type = "button";
+            pick2Btn.className = `pick-dep-btn ${mergePickingFor === "second" ? "active" : ""}`;
+            pick2Btn.style.marginTop = "6px";
+            if (mergeSecondArtefact) {
+                const l2 = mergeSecondArtefact.data.label || "(unnamed)";
+                pick2Btn.textContent = `2nd: ${l2} (${mergeSecondArtefact.sortName})`;
+            } else {
+                pick2Btn.textContent = mergePickingFor === "second" ? "Click candidate in tree..." : "Or Pick in Tree/Canvas";
+            }
+            pick2Btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                mergePickingFor = mergePickingFor === "second" ? null : "second";
+                renderInspector();
+                renderMenu();
+            });
+            group2.appendChild(pick2Btn);
+
+        } else {
+            const disabledMsg = document.createElement("div");
+            disabledMsg.style.fontSize = "0.8rem";
+            disabledMsg.style.color = "#888";
+            disabledMsg.style.fontStyle = "italic";
+            disabledMsg.textContent = "Select 1st artefact first.";
+            group2.appendChild(disabledMsg);
+        }
+        form.appendChild(group2);
+
+        // 3. Preview Box
+        if (mergeFirstArtefact && mergeSecondArtefact) {
+            const label1 = typeof mergeFirstArtefact.data.label === "string" ? mergeFirstArtefact.data.label.trim() : "";
+            const label2 = typeof mergeSecondArtefact.data.label === "string" ? mergeSecondArtefact.data.label.trim() : "";
+            let previewLabel = "";
+            if (label1 && label2) previewLabel = `${label1}, ${label2}`;
+            else if (label1) previewLabel = label1;
+            else if (label2) previewLabel = label2;
+
+            const previewBox = document.createElement("div");
+            previewBox.className = "merge-preview-box";
+            previewBox.innerHTML = `
+                <strong style="color: #8e44ad;">Merge Result Preview:</strong><br/>
+                • Datafields kept from: <strong>${mergeSecondArtefact.data.label || mergeSecondArtefact.sortName}</strong><br/>
+                • New Label: <strong>${previewLabel || "(none)"}</strong>
+            `;
+            form.appendChild(previewBox);
+        }
+
+        // 4. Action Buttons
+        const actionGroup = document.createElement("div");
+        actionGroup.className = "action-btns";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "btn btn-cancel";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", () => {
+            cancelMergeMode();
+        });
+
+        const canMerge = !!(mergeFirstArtefact && mergeSecondArtefact && mergeFirstArtefact !== mergeSecondArtefact && drawing.areDependenciesEqual(mergeFirstArtefact, mergeSecondArtefact));
+
+        const validateBtn = document.createElement("button");
+        validateBtn.type = "button";
+        validateBtn.className = "btn btn-merge";
+        validateBtn.textContent = "Merge";
+        validateBtn.disabled = !canMerge;
+
+        validateBtn.addEventListener("click", () => {
+            if (canMerge && mergeFirstArtefact && mergeSecondArtefact) {
+                try {
+                    const mergedResult = drawing.mergeArtefacts(mergeFirstArtefact, mergeSecondArtefact);
+                    mergeMode = false;
+                    mergeFirstArtefact = null;
+                    mergeSecondArtefact = null;
+                    mergePickingFor = null;
+                    inspectedArtefact = mergedResult;
+                    updateCanvas();
+                    renderMenu();
+                    renderInspector();
+                } catch (err) {
+                    alert((err as Error).message);
+                }
+            }
+        });
+
+        actionGroup.appendChild(cancelBtn);
+        actionGroup.appendChild(validateBtn);
+        form.appendChild(actionGroup);
+
+        inspectorContent.appendChild(form);
+        return;
+    }
 
     // A. Creation View (Draft Artefact Mode)
     if (draftArtefact) {
@@ -1653,6 +1977,17 @@ function renderInspector() {
             form.appendChild(group);
         }
     }
+
+    const mergeWithBtn = document.createElement("button");
+    mergeWithBtn.type = "button";
+    mergeWithBtn.className = "btn btn-merge";
+    mergeWithBtn.style.marginTop = "15px";
+    mergeWithBtn.style.width = "100%";
+    mergeWithBtn.textContent = "Merge with another artefact...";
+    mergeWithBtn.addEventListener("click", () => {
+        startMergeMode(inspectedArtefact);
+    });
+    form.appendChild(mergeWithBtn);
 
     inspectorContent.appendChild(form);
 }

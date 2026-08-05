@@ -178,7 +178,7 @@ export class Drawing {
     public isLayerVisible(layerId: string): boolean {
         let current: string | null = layerId;
         while (current && this.layers.has(current)) {
-            const layer = this.layers.get(current)!;
+            const layer: Layer = this.layers.get(current)!;
             if (!layer.visible) {
                 return false;
             }
@@ -706,6 +706,124 @@ export class Drawing {
                 eq.dependencies = newDeps;
             }
         }
+    }
+
+    public areDependenciesEqual(a1: Artefact, a2: Artefact): boolean {
+        if (a1.sortName !== a2.sortName) {
+            return false;
+        }
+
+        const keys1 = Object.keys(a1.dependencies);
+        const keys2 = Object.keys(a2.dependencies);
+
+        if (keys1.length !== keys2.length) {
+            return false;
+        }
+
+        for (const k of keys1) {
+            if (!Object.prototype.hasOwnProperty.call(a2.dependencies, k)) {
+                return false;
+            }
+            if (a1.dependencies[k] !== a2.dependencies[k]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public mergeArtefacts(a1: Artefact, a2: Artefact): Artefact {
+        if (!this.artefacts.includes(a1) || !this.artefacts.includes(a2)) {
+            throw new Error("Consistency Check Failed: Both artefacts must exist in the drawing to be merged.");
+        }
+        if (a1 === a2) {
+            throw new Error("Consistency Check Failed: Cannot merge an artefact with itself.");
+        }
+        if (!this.areDependenciesEqual(a1, a2)) {
+            throw new Error("Consistency Check Failed: Cannot merge artefacts with different dependencies or sorts.");
+        }
+
+        // Layer hierarchy check: any artefact depending on a1 must allow a2's layerId in its ancestors
+        const allowedForA2Layer = a2.layerId;
+        for (const art of this.artefacts) {
+            if (art === a1 || art === a2) continue;
+            for (const depVal of Object.values(art.dependencies)) {
+                if (depVal === a1) {
+                    const artAllowed = this.getAncestors(art.layerId);
+                    if (!artAllowed.has(allowedForA2Layer)) {
+                        const a2LayerName = this.layers.get(allowedForA2Layer)?.name || allowedForA2Layer;
+                        const artLayerName = this.layers.get(art.layerId)?.name || art.layerId;
+                        throw new Error(`Consistency Check Failed: Merging would violate layer hierarchy. Artefact '${art.data.label || art.sortName}' (in layer '${artLayerName}') depends on this artefact, but target layer '${a2LayerName}' is not in its lower ancestor layers.`);
+                    }
+                }
+            }
+        }
+
+        // Determine new label: concatenation of old labels separated by ", "
+        const label1 = typeof a1.data.label === "string" ? a1.data.label.trim() : "";
+        const label2 = typeof a2.data.label === "string" ? a2.data.label.trim() : "";
+
+        let combinedLabel = "";
+        if (label1 && label2) {
+            combinedLabel = `${label1}, ${label2}`;
+        } else if (label1) {
+            combinedLabel = label1;
+        } else if (label2) {
+            combinedLabel = label2;
+        }
+
+        // Keep second artefact's datafields and set combined label
+        if (combinedLabel) {
+            a2.data.label = combinedLabel;
+        } else {
+            delete a2.data.label;
+        }
+
+        // Replace references to a1 with a2 in all artefacts
+        for (const art of this.artefacts) {
+            if (art === a1) continue;
+
+            for (const [depKey, depVal] of Object.entries(art.dependencies)) {
+                if (depVal === a1) {
+                    art.dependencies[depKey] = a2;
+                }
+            }
+
+            if (art.sortName === "Equality") {
+                const currentChildren = art instanceof EqualityArtefact
+                    ? art.children
+                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+
+                const updatedChildren = currentChildren.map(c => c === a1 ? a2 : c);
+                const uniqueChildren = Array.from(new Set(updatedChildren));
+
+                if (art instanceof EqualityArtefact) {
+                    art.setChildren(uniqueChildren);
+                } else {
+                    const newDeps: Record<string, Artefact | boolean> = {};
+                    uniqueChildren.forEach((child, idx) => {
+                        newDeps[`${idx}`] = child;
+                    });
+                    art.dependencies = newDeps;
+                }
+            }
+        }
+
+        // Clean up any equality artefacts that now have fewer than 2 distinct children
+        this.artefacts = this.artefacts.filter(art => {
+            if (art.sortName === "Equality") {
+                const children = art instanceof EqualityArtefact
+                    ? art.children
+                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                return children.length >= 2;
+            }
+            return true;
+        });
+
+        // Remove a1 from drawing
+        this.artefacts = this.artefacts.filter(art => art !== a1);
+
+        return a2;
     }
 
     clear(keepDefaultRoot: boolean = true): void {
