@@ -240,6 +240,60 @@
         transition: opacity 0.3s ease;
       }
       
+      .drawing-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        margin-top: 4px;
+      }
+      .drawing-row.active {
+        border-color: #3498db;
+        background-color: #ebf5fb;
+      }
+      .drawing-title {
+        font-weight: 600;
+        color: #2c3e50;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .rule-badge {
+        font-size: 0.7em;
+        font-weight: bold;
+        background-color: #2ecc71;
+        color: white;
+        padding: 2px 5px;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .active-badge {
+        font-size: 0.7em;
+        font-weight: bold;
+        background-color: #3498db;
+        color: white;
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+      .current-drawing-banner {
+        padding: 6px 8px;
+        background-color: #eaf2f8;
+        border: 1px solid #aed6f1;
+        border-radius: 4px;
+        margin-bottom: 12px;
+        font-size: 0.82rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+
       /* Inspector Forms */
       .form-group {
         margin-bottom: 12px;
@@ -340,7 +394,20 @@
           </div>
           <input type="file" id="script-upload" accept=".js" style="display: none;" />
         </div>
+
+        <div id="current-drawing-banner" class="current-drawing-banner">
+          <span style="color: #555;">Editing: <strong id="active-drawing-name" style="color: #2c3e50;">Unsaved Drawing</strong></span>
+          <span id="active-drawing-rule-tag"></span>
+        </div>
         
+        <div class="drawings-container" style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px dashed #eee;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <h3 style="margin: 0; font-size: 0.9rem; color: #555;">Drawing Store</h3>
+            <button id="save-drawing-btn" class="layer-btn" style="background-color: #2ecc71; color: white; border: none; font-weight: bold;" title="Save current drawing">+ Save Drawing</button>
+          </div>
+          <div id="drawings-content"></div>
+        </div>
+
         <div class="layers-tree-container">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
             <h3 style="margin: 0; font-size: 0.9rem; color: #555;">Layers Tree</h3>

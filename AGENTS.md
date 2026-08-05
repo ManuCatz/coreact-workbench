@@ -28,11 +28,6 @@
   ```bash
   npm run dev
   ```
-- **Build project**:
-  ```bash
-  npm run build
-  ```
-  *(Runs TypeScript compiler `tsc` followed by Vite build)*
 - **Build default sorts script**:
   ```bash
   npm run build:sorts

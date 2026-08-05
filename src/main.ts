@@ -1,14 +1,16 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, Layer } from './index';
+import { SortStore, Drawing, Artefact, Layer, DrawingStore } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
 const sortStore = new SortStore();
+(globalThis as any).sortStore = sortStore;
 
 // 2. Load default sorts via executor
 new Function('sortStore', 'd3', defaultSortsCode)(sortStore, d3);
 
-// 3. Create the Drawing instance
+// 3. Create DrawingStore and Drawing instances
+const drawingStore = new DrawingStore();
 const drawing = new Drawing(sortStore);
 
 // Set up Layer Tree hierarchy for Demo
@@ -19,10 +21,10 @@ rootLayer.color = "#3498db";
 rootLayer.colorEnabled = false;
 
 // Child Layer 1 above Root Layer
-const layer1 = drawing.addLayer("layer-1", "Child Layer 1", "root", "#e74c3c", true);
+drawing.addLayer("layer-1", "Child Layer 1", "root", "#e74c3c", true);
 
 // Child Layer 2 above Child Layer 1
-const layer2 = drawing.addLayer("layer-2", "Child Layer 2", "layer-1", "#2ecc71", true);
+drawing.addLayer("layer-2", "Child Layer 2", "layer-1", "#2ecc71", true);
 
 console.log("Creating valid artefacts with multi-layer support...");
 
@@ -132,15 +134,38 @@ try {
 // Hierarchy Check: Try creating an edge in "root" layer that depends on "p1" (which is in "layer-1")
 try {
     drawing.newArtefact("Edge", { source: sq_v0, target: sq_v1 }, { width: 2, label: "invalid_edge" }, "root");
-    // To trigger cross-layer failure, depend on p1 (which is in layer-1) from an artefact in root:
-    // But Edge expects Vertex dependencies. Let's create an edge in Root whose source is in Root, but target is in layer-1? Wait, sq_v0 is in root. If we had a vertex in layer-1, root couldn't use it!
     const v_layer1 = drawing.newArtefact("Vertex", {}, { position: [100, 100], label: "v_top" }, "layer-1");
     drawing.newArtefact("Edge", { source: v0, target: v_layer1 }, { width: 2, label: "illegal_edge" }, "root");
 } catch (e) {
     console.error("Caught expected error for invalid layer hierarchy dependency:", (e as Error).message);
 }
 
+// Drawing Store & Rule Validation Tests
+console.log("--- Drawing Store & Rule Validation Tests ---");
+
+// Test 1: Validation on initial demo drawing (isRule should be false because root has 0 leaf children)
+const check1 = drawingStore.checkIsRule(drawing);
+console.log("Rule check on initial drawing (isRule expected false):", check1.isRule, "-", check1.reason);
+
+// Save initial demo drawing (regular drawing, not a rule)
+const savedDemo = drawingStore.saveDrawing("Initial Drawing", drawing);
+console.log("Saved 'Initial Drawing', isRule =", savedDemo.isRule);
+
+// Test 2: Add a leaf child layer to root to satisfy Rule condition
+drawing.addLayer("leaf-layer", "Leaf Layer", "root", "#f39c12", true);
+const check2 = drawingStore.checkIsRule(drawing);
+console.log("Rule check after adding leaf layer (isRule expected true):", check2.isRule);
+
+// Save drawing as a rule-compliant drawing
+const savedRuleDrawing = drawingStore.saveDrawing("Rule Drawing Demo", drawing);
+console.log("Saved 'Rule Drawing Demo', isRule =", savedRuleDrawing.isRule);
+
+// Test 3: Load rule drawing back into canvas
+drawingStore.loadDrawing("Rule Drawing Demo", drawing);
+console.log("Successfully loaded 'Rule Drawing Demo' back into canvas.");
+
 // 7. Render UI Menu & Interaction
+let activeDrawingName: string | null = "Rule Drawing Demo";
 let inspectedArtefact: Artefact | null = null;
 
 let draftArtefact: {
@@ -152,9 +177,27 @@ let draftArtefact: {
 
 let dependencyPickingFor: string | null = null;
 
+function updateActiveDrawingBanner(): void {
+    const nameEl = document.getElementById("active-drawing-name");
+    const tagEl = document.getElementById("active-drawing-rule-tag");
+    if (nameEl) {
+        nameEl.textContent = activeDrawingName || "Unsaved Drawing";
+    }
+
+    if (tagEl) {
+        const ruleCheck = drawingStore.checkIsRule(drawing);
+        if (ruleCheck.isRule) {
+            tagEl.innerHTML = `<span class="rule-badge" title="This drawing satisfies rule conditions">Rule</span>`;
+        } else {
+            tagEl.innerHTML = "";
+        }
+    }
+}
+
 function updateCanvas(): void {
     svgContext.selectAll("*").remove();
     drawing.draw(svgContext);
+    updateActiveDrawingBanner();
 
     if (draftArtefact) {
         const sortDef = sortStore.getSort(draftArtefact.sortName);
@@ -657,10 +700,124 @@ function renderMenu(): void {
     applyOpacities(inspectedArtefact);
 }
 
+function renderDrawingsStore(): void {
+    const container = document.getElementById("drawings-content");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const drawings = drawingStore.getAllDrawings();
+
+    if (drawings.length === 0) {
+        const emptyMsg = document.createElement("div");
+        emptyMsg.style.color = "#888";
+        emptyMsg.style.fontStyle = "italic";
+        emptyMsg.style.fontSize = "0.8rem";
+        emptyMsg.style.marginTop = "4px";
+        emptyMsg.textContent = "No drawings saved yet.";
+        container.appendChild(emptyMsg);
+        return;
+    }
+
+    for (const savedDrawing of drawings) {
+        const isActive = savedDrawing.name === activeDrawingName;
+        const rowDiv = document.createElement("div");
+        rowDiv.className = `drawing-row${isActive ? " active" : ""}`;
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "drawing-title";
+        titleSpan.textContent = savedDrawing.name;
+        titleSpan.title = `Drawing: ${savedDrawing.name} (${savedDrawing.layers.length} layers, ${savedDrawing.artefacts.length} artefacts)${savedDrawing.isRule ? ' [Rule]' : ''}`;
+
+        rowDiv.appendChild(titleSpan);
+
+        if (isActive) {
+            const activeBadge = document.createElement("span");
+            activeBadge.className = "active-badge";
+            activeBadge.textContent = "Editing";
+            activeBadge.title = "Currently active on canvas";
+            rowDiv.appendChild(activeBadge);
+        }
+
+        if (savedDrawing.isRule) {
+            const badge = document.createElement("span");
+            badge.className = "rule-badge";
+            badge.textContent = "Rule";
+            badge.title = "This drawing satisfies rule conditions";
+            rowDiv.appendChild(badge);
+        }
+
+        const loadBtn = document.createElement("button");
+        loadBtn.className = "layer-btn";
+        loadBtn.textContent = "Load";
+        loadBtn.title = `Load drawing '${savedDrawing.name}' to edit further`;
+        loadBtn.addEventListener("click", () => {
+            if (confirm(`Load drawing '${savedDrawing.name}'? Unsaved canvas changes will be overwritten.`)) {
+                try {
+                    drawingStore.loadDrawing(savedDrawing.name, drawing);
+                    activeDrawingName = savedDrawing.name;
+                    inspectedArtefact = null;
+                    draftArtefact = null;
+                    dependencyPickingFor = null;
+                    if (activePositionPicker) {
+                        activePositionPicker = null;
+                        d3.select("body").style("cursor", "default");
+                    }
+                    updateCanvas();
+                    renderLayersTree();
+                    renderMenu();
+                    renderInspector();
+                    renderDrawingsStore();
+                } catch (err) {
+                    alert(`Error loading drawing:\n${(err as Error).message}`);
+                }
+            }
+        });
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "layer-btn";
+        deleteBtn.style.color = "#e74c3c";
+        deleteBtn.textContent = "×";
+        deleteBtn.title = `Delete drawing '${savedDrawing.name}'`;
+        deleteBtn.addEventListener("click", () => {
+            if (confirm(`Delete drawing '${savedDrawing.name}'?`)) {
+                if (savedDrawing.name === activeDrawingName) {
+                    activeDrawingName = null;
+                }
+                drawingStore.deleteDrawing(savedDrawing.name);
+                updateActiveDrawingBanner();
+                renderDrawingsStore();
+            }
+        });
+
+        rowDiv.appendChild(loadBtn);
+        rowDiv.appendChild(deleteBtn);
+        container.appendChild(rowDiv);
+    }
+}
+
 // Initial UI Render
+renderDrawingsStore();
 renderLayersTree();
 renderMenu();
 renderInspector();
+
+// Save Drawing Button Listener
+const saveDrawingBtn = document.getElementById("save-drawing-btn");
+if (saveDrawingBtn) {
+    saveDrawingBtn.addEventListener("click", () => {
+        const name = prompt("Enter a name for the drawing:");
+        if (name && name.trim()) {
+            try {
+                drawingStore.saveDrawing(name.trim(), drawing);
+                activeDrawingName = name.trim();
+                updateActiveDrawingBanner();
+                renderDrawingsStore();
+            } catch (err) {
+                alert(`Error saving drawing:\n${(err as Error).message}`);
+            }
+        }
+    });
+}
 
 // Clear All Button Listener
 const clearBtn = document.getElementById("clear-btn");
@@ -668,6 +825,7 @@ if (clearBtn) {
     clearBtn.addEventListener("click", () => {
         if (confirm("Are you sure you want to clear all artefacts and layers?")) {
             drawing.clear();
+            activeDrawingName = null;
             inspectedArtefact = null;
             draftArtefact = null;
             dependencyPickingFor = null;
@@ -679,6 +837,7 @@ if (clearBtn) {
             renderLayersTree();
             renderMenu();
             renderInspector();
+            renderDrawingsStore();
         }
     });
 }

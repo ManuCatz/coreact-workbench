@@ -157,7 +157,7 @@ export class Drawing {
         let current: string | null = layerId;
         while (current && this.layers.has(current)) {
             ancestors.add(current);
-            const layer = this.layers.get(current)!;
+            const layer: Layer = this.layers.get(current)!;
             current = layer.parentId;
         }
         return ancestors;
@@ -389,10 +389,243 @@ export class Drawing {
         this.artefacts = this.artefacts.filter(art => !art.getSelfAndDependencies().has(target));
     }
 
-    clear(): void {
+    clear(keepDefaultRoot: boolean = true): void {
         this.artefacts = [];
         this.layers.clear();
         this.focusedLayerId = null;
-        this.addLayer("root", "Root Layer", null, "#3498db", false);
+        if (keepDefaultRoot) {
+            this.addLayer("root", "Root Layer", null, "#3498db", false);
+        }
+    }
+}
+
+export interface LayerData {
+    id: string;
+    name: string;
+    parentId: string | null;
+    color: string;
+    colorEnabled: boolean;
+}
+
+export interface ArtefactData {
+    id: string;
+    sortName: string;
+    layerId: string;
+    dependencies: Record<string, string | boolean>;
+    data: Record<string, any>;
+}
+
+export interface SavedDrawing {
+    name: string;
+    layers: LayerData[];
+    artefacts: ArtefactData[];
+    isRule: boolean;
+}
+
+export class DrawingStore {
+    private drawings: Map<string, SavedDrawing> = new Map();
+
+    public checkIsRule(drawing: Drawing): { isRule: boolean; reason?: string } {
+        const layers = drawing.getAllLayers();
+        const rootLayers = layers.filter(l => l.parentId === null);
+
+        // Rule condition 1: At most one root layer
+        if (rootLayers.length > 1) {
+            return {
+                isRule: false,
+                reason: `Drawing has ${rootLayers.length} root layers (at most 1 allowed).`
+            };
+        }
+
+        // Rule condition 2: Depth at most 3
+        const getLayerDepth = (layerId: string): number => {
+            let depth = 0;
+            let current: string | null = layerId;
+            const visited = new Set<string>();
+            while (current) {
+                if (visited.has(current)) break;
+                visited.add(current);
+                depth++;
+                const layer = drawing.getLayer(current);
+                current = layer ? layer.parentId : null;
+            }
+            return depth;
+        };
+
+        for (const layer of layers) {
+            const depth = getLayerDepth(layer.id);
+            if (depth > 3) {
+                return {
+                    isRule: false,
+                    reason: `Layer '${layer.name}' exceeds maximum allowed depth of 3 (current depth: ${depth}).`
+                };
+            }
+        }
+
+        // Rule condition 3: Exactly one child of the root layer that does not have any children
+        if (rootLayers.length === 0) {
+            return {
+                isRule: false,
+                reason: "Drawing has no root layer (a rule requires exactly one child of the root layer with no children)."
+            };
+        }
+
+        const root = rootLayers[0];
+        const rootChildren = layers.filter(l => l.parentId === root.id);
+        const leafRootChildren = rootChildren.filter(child => {
+            const childrenOfChild = layers.filter(l => l.parentId === child.id);
+            return childrenOfChild.length === 0;
+        });
+
+        if (leafRootChildren.length !== 1) {
+            return {
+                isRule: false,
+                reason: `Root layer must have exactly 1 child layer without children, but found ${leafRootChildren.length}.`
+            };
+        }
+
+        return { isRule: true };
+    }
+
+    public saveDrawing(name: string, drawing: Drawing): SavedDrawing {
+        if (!name || !name.trim()) {
+            throw new Error("Consistency Check Failed: Drawing name cannot be empty.");
+        }
+
+        const trimmedName = name.trim();
+        const ruleCheck = this.checkIsRule(drawing);
+
+        const artefacts = drawing.getArtefacts();
+        const artefactToId = new Map<Artefact, string>();
+        artefacts.forEach((art, index) => {
+            artefactToId.set(art, `art_${index}`);
+        });
+
+        const layersData: LayerData[] = drawing.getAllLayers().map(l => ({
+            id: l.id,
+            name: l.name,
+            parentId: l.parentId,
+            color: l.color,
+            colorEnabled: l.colorEnabled
+        }));
+
+        const artefactsData: ArtefactData[] = artefacts.map(art => {
+            const serializedDeps: Record<string, string | boolean> = {};
+            for (const [key, val] of Object.entries(art.dependencies)) {
+                if (typeof val === "boolean") {
+                    serializedDeps[key] = val;
+                } else if (val && artefactToId.has(val)) {
+                    serializedDeps[key] = artefactToId.get(val)!;
+                }
+            }
+
+            return {
+                id: artefactToId.get(art)!,
+                sortName: art.sortName,
+                layerId: art.layerId,
+                dependencies: serializedDeps,
+                data: JSON.parse(JSON.stringify(art.data))
+            };
+        });
+
+        const savedDrawing: SavedDrawing = {
+            name: trimmedName,
+            layers: layersData,
+            artefacts: artefactsData,
+            isRule: ruleCheck.isRule
+        };
+
+        this.drawings.set(trimmedName, savedDrawing);
+        return savedDrawing;
+    }
+
+    public loadDrawing(name: string, drawing: Drawing): void {
+        const savedDrawing = this.drawings.get(name);
+        if (!savedDrawing) {
+            throw new Error(`Consistency Check Failed: Drawing '${name}' does not exist.`);
+        }
+
+        drawing.clear(false);
+
+        // Restore layers iteratively
+        const remainingLayers = [...savedDrawing.layers];
+        let layerProgress = true;
+        while (remainingLayers.length > 0 && layerProgress) {
+            layerProgress = false;
+            for (let i = 0; i < remainingLayers.length; i++) {
+                const lData = remainingLayers[i];
+                if (lData.parentId === null || drawing.getLayer(lData.parentId) !== undefined) {
+                    drawing.addLayer(lData.id, lData.name, lData.parentId, lData.color, lData.colorEnabled);
+                    remainingLayers.splice(i, 1);
+                    layerProgress = true;
+                    break;
+                }
+            }
+        }
+
+        if (remainingLayers.length > 0) {
+            throw new Error(`Consistency Check Failed: Could not restore layer hierarchy for drawing '${name}'.`);
+        }
+
+        // Restore artefacts iteratively
+        const remainingArtefacts = [...savedDrawing.artefacts];
+        const createdArtefacts = new Map<string, Artefact>();
+
+        let artProgress = true;
+        while (remainingArtefacts.length > 0 && artProgress) {
+            artProgress = false;
+            for (let i = 0; i < remainingArtefacts.length; i++) {
+                const artData = remainingArtefacts[i];
+
+                let ready = true;
+                const resolvedDeps: Record<string, Artefact | boolean> = {};
+
+                for (const [depKey, depVal] of Object.entries(artData.dependencies)) {
+                    if (typeof depVal === "boolean") {
+                        resolvedDeps[depKey] = depVal;
+                    } else if (typeof depVal === "string") {
+                        if (createdArtefacts.has(depVal)) {
+                            resolvedDeps[depKey] = createdArtefacts.get(depVal)!;
+                        } else {
+                            ready = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (ready) {
+                    const newArt = drawing.newArtefact(
+                        artData.sortName,
+                        resolvedDeps,
+                        artData.data,
+                        artData.layerId
+                    );
+                    createdArtefacts.set(artData.id, newArt);
+                    remainingArtefacts.splice(i, 1);
+                    artProgress = true;
+                    break;
+                }
+            }
+        }
+
+        if (remainingArtefacts.length > 0) {
+            throw new Error(`Consistency Check Failed: Could not resolve dependencies for drawing '${name}'.`);
+        }
+    }
+
+    public getDrawing(name: string): SavedDrawing | undefined {
+        return this.drawings.get(name);
+    }
+
+    public getAllDrawings(): SavedDrawing[] {
+        return Array.from(this.drawings.values());
+    }
+
+    public deleteDrawing(name: string): boolean {
+        return this.drawings.delete(name);
+    }
+
+    public clear(): void {
+        this.drawings.clear();
     }
 }
