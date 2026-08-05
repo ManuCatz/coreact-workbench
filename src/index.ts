@@ -732,6 +732,10 @@ export class Drawing {
         return true;
     }
 
+    public areProvablyEqual(a: Artefact, b: Artefact): boolean {
+        return this.areEqual(a, b, a.layerId) || this.areEqual(a, b, b.layerId);
+    }
+
     public mergeArtefacts(a1: Artefact, a2: Artefact): Artefact {
         if (!this.artefacts.includes(a1) || !this.artefacts.includes(a2)) {
             throw new Error("Consistency Check Failed: Both artefacts must exist in the drawing to be merged.");

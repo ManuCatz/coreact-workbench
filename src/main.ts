@@ -280,10 +280,12 @@ let mergeMode: boolean = false;
 let mergeFirstArtefact: Artefact | null = null;
 let mergeSecondArtefact: Artefact | null = null;
 let mergePickingFor: "first" | "second" | null = null;
+let mergeHoverArtefact: Artefact | null = null;
 
 function startMergeMode(preselectFirst: Artefact | null = null): void {
     draftArtefact = null;
     dependencyPickingFor = null;
+    mergeHoverArtefact = null;
     if (activePositionPicker) {
         activePositionPicker.pickBtn.style.backgroundColor = "";
         activePositionPicker = null;
@@ -311,6 +313,7 @@ function cancelMergeMode(): void {
     mergeFirstArtefact = null;
     mergeSecondArtefact = null;
     mergePickingFor = null;
+    mergeHoverArtefact = null;
     renderMenu();
     renderInspector();
     updateCanvas();
@@ -335,6 +338,23 @@ function updateActiveDrawingBanner(): void {
             tagEl.innerHTML = "";
         }
     }
+}
+
+function mergeBaseOpacity(art: Artefact): number {
+    if (art === mergeFirstArtefact || art === mergeSecondArtefact) {
+        return 1.0;
+    }
+    if (mergeFirstArtefact && drawing.areDependenciesEqual(mergeFirstArtefact, art)) {
+        return drawing.areProvablyEqual(mergeFirstArtefact, art) ? 1.0 : 0.85;
+    }
+    if (!mergeFirstArtefact) {
+        return 0.85;
+    }
+    return 0.35;
+}
+
+function mergeCanvasOpacity(art: Artefact, hoveredSet: Set<Artefact> | null): number {
+    return hoveredSet && hoveredSet.has(art) ? 1.0 : (hoveredSet ? 0.5 : mergeBaseOpacity(art));
 }
 
 function updateCanvas(): void {
@@ -384,6 +404,15 @@ function updateCanvas(): void {
     }
 
     renderRuleApplications();
+
+    if (mergeMode) {
+        const hoveredSet = mergeHoverArtefact ? mergeHoverArtefact.getSelfAndDependencies() : null;
+        for (const art of drawing.getArtefacts()) {
+            if (art.svgElement) {
+                art.svgElement.attr("opacity", mergeCanvasOpacity(art, hoveredSet));
+            }
+        }
+    }
 }
 
 function renderLayersTree(): void {
@@ -560,24 +589,17 @@ function renderMenu(): void {
 
     function applyOpacities(target: Artefact | null) {
         if (mergeMode) {
+            const hoveredSet = mergeHoverArtefact ? mergeHoverArtefact.getSelfAndDependencies() : null;
             for (const art of allArtefacts) {
-                let opacity = 0.35;
-                if (art === mergeFirstArtefact || art === mergeSecondArtefact) {
-                    opacity = 1.0;
-                } else if (mergeFirstArtefact && drawing.areDependenciesEqual(mergeFirstArtefact, art)) {
-                    opacity = 0.85;
-                } else if (!mergeFirstArtefact) {
-                    opacity = 0.85;
-                }
-
                 if (art.svgElement) {
-                    art.svgElement.attr("opacity", opacity);
+                    art.svgElement.attr("opacity", mergeCanvasOpacity(art, hoveredSet));
                 }
 
                 const uiEls = uiNodeMap.get(art);
                 if (uiEls) {
+                    const treeOpacity = mergeBaseOpacity(art);
                     for (const el of uiEls) {
-                        el.style.opacity = opacity.toString();
+                        el.style.opacity = treeOpacity.toString();
                     }
                 }
             }
@@ -686,15 +708,30 @@ function renderMenu(): void {
         removeBtn.textContent = "×";
         removeBtn.title = isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : "Remove artefact";
 
+        const isProvablyEqualCandidate = mergeMode && !!mergeFirstArtefact && artefact !== mergeFirstArtefact
+            && drawing.areDependenciesEqual(mergeFirstArtefact, artefact)
+            && drawing.areProvablyEqual(mergeFirstArtefact, artefact);
+
         headerDiv.appendChild(toggleIcon);
         headerDiv.appendChild(labelSpan);
         headerDiv.appendChild(layerBadge);
+        if (isProvablyEqualCandidate) {
+            const eqBadge = document.createElement("span");
+            eqBadge.className = "eq-badge";
+            eqBadge.textContent = "≡";
+            eqBadge.title = "Provably equal (via equality artefacts)";
+            headerDiv.appendChild(eqBadge);
+        }
         headerDiv.appendChild(removeBtn);
         nodeDiv.appendChild(headerDiv);
 
         const uiNodes = uiNodeMap.get(artefact);
         if (uiNodes) {
             uiNodes.push(nodeDiv);
+        }
+
+        if (isProvablyEqualCandidate) {
+            nodeDiv.classList.add("provably-equal");
         }
 
         if (inspectedArtefact === artefact || (mergeMode && (mergeFirstArtefact === artefact || mergeSecondArtefact === artefact))) {
@@ -718,6 +755,7 @@ function renderMenu(): void {
             e.stopPropagation();
 
             if (mergeMode) {
+                mergeHoverArtefact = null;
                 if (mergePickingFor === "first" || !mergeFirstArtefact) {
                     mergeFirstArtefact = artefact;
                     if (mergeSecondArtefact === artefact) {
@@ -785,11 +823,21 @@ function renderMenu(): void {
 
         headerDiv.addEventListener("mouseenter", (e) => {
             e.stopPropagation();
+            if (mergeMode) {
+                mergeHoverArtefact = artefact;
+                applyOpacities(null);
+                return;
+            }
             applyOpacities(artefact);
         });
 
         headerDiv.addEventListener("mouseleave", (e) => {
             e.stopPropagation();
+            if (mergeMode) {
+                mergeHoverArtefact = null;
+                applyOpacities(null);
+                return;
+            }
             applyOpacities(inspectedArtefact);
         });
 
@@ -882,6 +930,7 @@ function renderMenu(): void {
             mergeFirstArtefact = null;
             mergeSecondArtefact = null;
             mergePickingFor = null;
+            mergeHoverArtefact = null;
 
             const initialData: Record<string, any> = {};
             for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
@@ -1453,27 +1502,51 @@ function renderInspector() {
                 noCandMsg.textContent = "No other artefacts with matching dependencies found.";
                 group2.appendChild(noCandMsg);
             } else {
+                const provablyEqual = candidates.filter(c => drawing.areProvablyEqual(mergeFirstArtefact!, c));
+                const others = candidates.filter(c => !drawing.areProvablyEqual(mergeFirstArtefact!, c));
+                const orderedCandidates = [...provablyEqual, ...others];
+
                 const selectEl = document.createElement("select");
                 const defaultOpt = document.createElement("option");
                 defaultOpt.value = "";
                 defaultOpt.textContent = "-- Select 2nd Artefact --";
                 selectEl.appendChild(defaultOpt);
 
-                for (let i = 0; i < candidates.length; i++) {
-                    const cand = candidates[i];
-                    const opt = document.createElement("option");
-                    opt.value = i.toString();
+                const optionText = (cand: Artefact) => {
                     const layerObj = drawing.getLayer(cand.layerId);
-                    opt.textContent = `${cand.data.label || "(unnamed)"} (${cand.sortName} in '${layerObj ? layerObj.name : cand.layerId}')`;
+                    return `${cand.data.label || "(unnamed)"} (${cand.sortName} in '${layerObj ? layerObj.name : cand.layerId}')`;
+                };
+
+                const addOption = (container: HTMLSelectElement | HTMLOptGroupElement, cand: Artefact, proven: boolean) => {
+                    const opt = document.createElement("option");
+                    opt.value = orderedCandidates.indexOf(cand).toString();
+                    opt.textContent = proven ? `≡ ${optionText(cand)} (proven equal)` : optionText(cand);
+                    if (proven) {
+                        opt.style.color = "#8e44ad";
+                        opt.style.fontWeight = "bold";
+                    }
                     if (cand === mergeSecondArtefact) opt.selected = true;
-                    selectEl.appendChild(opt);
+                    container.appendChild(opt);
+                };
+
+                if (provablyEqual.length > 0) {
+                    const eqGroup = document.createElement("optgroup");
+                    eqGroup.label = "≡ Provably equal (via equality artefacts)";
+                    provablyEqual.forEach(cand => addOption(eqGroup, cand, true));
+                    selectEl.appendChild(eqGroup);
+                }
+                if (others.length > 0) {
+                    const otherGroup = document.createElement("optgroup");
+                    otherGroup.label = "Other candidates";
+                    others.forEach(cand => addOption(otherGroup, cand, false));
+                    selectEl.appendChild(otherGroup);
                 }
 
                 selectEl.addEventListener("change", (e) => {
                     const val = (e.target as HTMLSelectElement).value;
                     if (val !== "") {
                         const idx = parseInt(val, 10);
-                        mergeSecondArtefact = candidates[idx];
+                        mergeSecondArtefact = orderedCandidates[idx];
                         mergePickingFor = null;
                     } else {
                         mergeSecondArtefact = null;
@@ -1560,6 +1633,7 @@ function renderInspector() {
                     mergeFirstArtefact = null;
                     mergeSecondArtefact = null;
                     mergePickingFor = null;
+                    mergeHoverArtefact = null;
                     inspectedArtefact = mergedResult;
                     updateCanvas();
                     renderMenu();
