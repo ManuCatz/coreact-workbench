@@ -1533,23 +1533,21 @@ function renderDrawingsStore(): void {
         loadBtn.textContent = "Load";
         loadBtn.title = `Load drawing '${savedDrawing.name}' to edit further`;
         loadBtn.addEventListener("click", () => {
-            if (confirm(`Load drawing '${savedDrawing.name}'? Unsaved canvas changes will be overwritten.`)) {
-                try {
-                    drawingStore.loadDrawing(savedDrawing.name, drawing);
-                    activeDrawingName = savedDrawing.name;
-                    layerProvability.clear();
-                    inspectedArtefact = null;
-                    draftArtefact = null;
-                    dependencyPickingFor = null;
-                    stopPositionPicker();
-                    updateCanvas();
-                    renderLayersTree();
-                    renderMenu();
-                    renderInspector();
-                    renderDrawingsStore();
-                } catch (err) {
-                    alert(`Error loading drawing:\n${(err as Error).message}`);
-                }
+            try {
+                drawingStore.loadDrawing(savedDrawing.name, drawing);
+                activeDrawingName = savedDrawing.name;
+                layerProvability.clear();
+                inspectedArtefact = null;
+                draftArtefact = null;
+                dependencyPickingFor = null;
+                stopPositionPicker();
+                updateCanvas();
+                renderLayersTree();
+                renderMenu();
+                renderInspector();
+                renderDrawingsStore();
+            } catch (err) {
+                alert(`Error loading drawing:\n${(err as Error).message}`);
             }
         });
 
