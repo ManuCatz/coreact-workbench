@@ -279,6 +279,18 @@ let draftArtefact: {
 
 let dependencyPickingFor: string | null = null;
 
+function findNextUnfilledDependency(): string | null {
+    if (!draftArtefact) return null;
+    const sortDef = sortStore.getSort(draftArtefact.sortName);
+    if (!sortDef) return null;
+    for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
+        if (expectedSort !== "flag" && !draftArtefact.dependencies[depKey]) {
+            return depKey;
+        }
+    }
+    return null;
+}
+
 let mergeMode: boolean = false;
 let mergeFirstArtefact: Artefact | null = null;
 let mergeSecondArtefact: Artefact | null = null;
@@ -802,7 +814,7 @@ function renderMenu(): void {
 
                     if (expectedSort && artefact.sortName === expectedSort) {
                         draftArtefact.dependencies[dependencyPickingFor] = artefact;
-                        dependencyPickingFor = null;
+                        dependencyPickingFor = findNextUnfilledDependency();
                         renderMenu();
                         renderInspector();
                         updateCanvas();
@@ -1328,6 +1340,13 @@ if (newDrawingBtn) {
         if (hasContent && !confirm("Start a new drawing? Current canvas content will be discarded.")) {
             return;
         }
+        const input = prompt("Enter a name for the new drawing:");
+        if (!input || !input.trim()) return;
+        const name = input.trim();
+        if (drawingStore.getDrawing(name)) {
+            alert(`A drawing named '${name}' already exists.`);
+            return;
+        }
         drawing.clear();
         activeDrawingName = null;
         inspectedArtefact = null;
@@ -1343,6 +1362,8 @@ if (newDrawingBtn) {
             activePositionPicker = null;
             d3.select("body").style("cursor", "default");
         }
+        drawingStore.saveDrawing(name, drawing);
+        activeDrawingName = name;
         updateCanvas();
         renderLayersTree();
         renderMenu();
