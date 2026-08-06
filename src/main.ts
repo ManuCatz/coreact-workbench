@@ -1292,6 +1292,14 @@ function renderRuleApplications(): void {
     }
 }
 
+// Refresh Applyable Rules Button Listener
+const refreshRulesBtn = document.getElementById("refresh-rules-btn");
+if (refreshRulesBtn) {
+    refreshRulesBtn.addEventListener("click", () => {
+        renderRuleApplications();
+    });
+}
+
 // Merge Artefacts Button Listener
 const mergeArtefactsBtn = document.getElementById("merge-artefacts-btn");
 if (mergeArtefactsBtn) {
