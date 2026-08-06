@@ -68,3 +68,5 @@ When instantiating the artefact, the flag is passed alongside the actual depende
 ```javascript
 drawing.newArtefact("Edge", {source: v0, target: v1, mono: true}, {width: 1, label: "e0"});
 ```
+
+I want rocq export feature for first-order rules. As an example, consider a rule named Comp whose root layer consists of two composable arrows f : a -> b and g : b -> c, and the child layer consists of one arrow h : a -> c together with a triangle artefact named T. The rocq export should yield: Comp : forall (a : Vertex)(b : Vertex)(c : Vertex)(f : Edge {| source := a, target := b |}) (g : Edge {| source := b, target := c |}), {|h : Edge {| source := a, target := c |}

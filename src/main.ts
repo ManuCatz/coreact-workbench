@@ -1303,17 +1303,51 @@ renderInspector();
 const saveDrawingBtn = document.getElementById("save-drawing-btn");
 if (saveDrawingBtn) {
     saveDrawingBtn.addEventListener("click", () => {
-        const name = prompt("Enter a name for the drawing:");
-        if (name && name.trim()) {
-            try {
-                drawingStore.saveDrawing(name.trim(), drawing);
-                activeDrawingName = name.trim();
-                updateActiveDrawingBanner();
-                renderDrawingsStore();
-            } catch (err) {
-                alert(`Error saving drawing:\n${(err as Error).message}`);
-            }
+        let name = activeDrawingName;
+        if (!name) {
+            const input = prompt("Enter a name for the drawing:");
+            if (!input || !input.trim()) return;
+            name = input.trim();
         }
+        try {
+            drawingStore.saveDrawing(name, drawing);
+            activeDrawingName = name;
+            updateActiveDrawingBanner();
+            renderDrawingsStore();
+        } catch (err) {
+            alert(`Error saving drawing:\n${(err as Error).message}`);
+        }
+    });
+}
+
+// New Drawing Button Listener
+const newDrawingBtn = document.getElementById("new-drawing-btn");
+if (newDrawingBtn) {
+    newDrawingBtn.addEventListener("click", () => {
+        const hasContent = drawing.getArtefacts().length > 0 || drawing.getAllLayers().length > 1;
+        if (hasContent && !confirm("Start a new drawing? Current canvas content will be discarded.")) {
+            return;
+        }
+        drawing.clear();
+        activeDrawingName = null;
+        inspectedArtefact = null;
+        draftArtefact = null;
+        dependencyPickingFor = null;
+        mergeMode = false;
+        mergeFirstArtefact = null;
+        mergeSecondArtefact = null;
+        mergePickingFor = null;
+        mergeHoverArtefact = null;
+        if (activePositionPicker) {
+            activePositionPicker.pickBtn.style.backgroundColor = "";
+            activePositionPicker = null;
+            d3.select("body").style("cursor", "default");
+        }
+        updateCanvas();
+        renderLayersTree();
+        renderMenu();
+        renderInspector();
+        renderDrawingsStore();
     });
 }
 
