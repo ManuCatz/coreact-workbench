@@ -1411,14 +1411,20 @@ function renderDrawingsStore(): void {
         titleSpan.textContent = savedDrawing.name;
         titleSpan.title = `Drawing: ${savedDrawing.name} (${savedDrawing.layers.length} layers, ${savedDrawing.artefacts.length} artefacts)${savedDrawing.isRule ? (savedDrawing.isFirstOrder ? ' [First-Order Rule]' : ' [Rule]') : ''}`;
 
-        rowDiv.appendChild(titleSpan);
+        const headerDiv = document.createElement("div");
+        headerDiv.className = "drawing-row-header";
+
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "drawing-row-actions";
+
+        headerDiv.appendChild(titleSpan);
 
         if (isActive) {
             const activeBadge = document.createElement("span");
             activeBadge.className = "active-badge";
             activeBadge.textContent = "Editing";
             activeBadge.title = "Currently active on canvas";
-            rowDiv.appendChild(activeBadge);
+            headerDiv.appendChild(activeBadge);
         }
 
         if (savedDrawing.isRule) {
@@ -1432,7 +1438,7 @@ function renderDrawingsStore(): void {
                 badge.textContent = "Second-Order";
                 badge.title = "Second-order rule: root layer has several child layers";
             }
-            rowDiv.appendChild(badge);
+            headerDiv.appendChild(badge);
         }
 
         const loadBtn = document.createElement("button");
@@ -1518,10 +1524,12 @@ function renderDrawingsStore(): void {
             renderDrawingsStore();
         });
 
-        rowDiv.appendChild(loadBtn);
-        rowDiv.appendChild(exportBtn);
-        rowDiv.appendChild(ruleToggleBtn);
-        rowDiv.appendChild(deleteBtn);
+        actionsDiv.appendChild(loadBtn);
+        actionsDiv.appendChild(exportBtn);
+        actionsDiv.appendChild(ruleToggleBtn);
+        actionsDiv.appendChild(deleteBtn);
+        rowDiv.appendChild(headerDiv);
+        rowDiv.appendChild(actionsDiv);
         container.appendChild(rowDiv);
     }
 

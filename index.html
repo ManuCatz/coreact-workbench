@@ -341,14 +341,27 @@
       
       .drawing-row {
         display: flex;
-        align-items: center;
-        gap: 6px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
         padding: 4px 6px;
         background-color: #f8f9fa;
         border: 1px solid #e9ecef;
         border-radius: 4px;
         font-size: 0.8rem;
         margin-top: 4px;
+      }
+      .drawing-row-header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+      }
+      .drawing-row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
       }
       .drawing-row.active {
         border-color: #3498db;
@@ -362,9 +375,8 @@
         font-weight: 600;
         color: #2c3e50;
         flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
+        overflow-wrap: break-word;
       }
       .rule-badge {
         font-size: 0.7em;
