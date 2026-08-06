@@ -1433,6 +1433,9 @@ function findRuleApplicationsInternal(
     const rootLayerIds = host.getAllLayers()
         .filter(l => l.parentId === null)
         .map(l => l.id);
+    const ruleRootLayerIds = new Set(rule.getAllLayers()
+        .filter(l => l.parentId === null)
+        .map(l => l.id));
     const hostCandidates = host.getArtefacts().filter(a => rootLayerIds.includes(a.layerId));
 
     const ordered: Artefact[] = [];
@@ -1495,12 +1498,18 @@ function findRuleApplicationsInternal(
             for (const [k, dep] of Object.entries(a.dependencies)) {
                 if (typeof dep === "boolean") {
                     if (dep === true) {
+                        // A flag leaving from a non-root layer belongs to the rule's
+                        // child-layer structure, not the root pattern: it must not
+                        // constrain matching.
+                        if (!ruleRootLayerIds.has(a.getFlagLayer(k))) {
+                            continue;
+                        }
                         if (cand.dependencies[k] !== true) {
                             ok = false;
                             break;
                         }
-                        // Flag leaves from a layer: require the same relative depth
-                        // between the flag's layer and the artefact's layer.
+                        // Flag leaves from the rule root layer: require the same relative
+                        // depth between the flag's layer and the artefact's layer.
                         const patternFlagLayer = a.getFlagLayer(k);
                         const hostFlagLayer = cand.getFlagLayer(k);
                         const patternRelative = rule.getLayerDepth(patternFlagLayer) - rule.getLayerDepth(a.layerId);
@@ -1662,7 +1671,24 @@ function remapFlagLayers(source: Artefact, target: Artefact, targetDrawing: Draw
     }
 }
 
-function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): Artefact[] {
+function computeConclusionFlags(rule: Drawing, ruleRoot: Layer, childLayer: Layer, match: Map<Artefact, Artefact>): Map<Artefact, Set<string>> {
+    const result = new Map<Artefact, Set<string>>();
+    for (const a of rule.getArtefacts()) {
+        if (a.layerId !== ruleRoot.id) continue;
+        for (const [key, dep] of Object.entries(a.dependencies)) {
+            if (dep !== true) continue;
+            if (a.getFlagLayer(key) !== childLayer.id) continue;
+            const img = match.get(a);
+            if (!img) continue;
+            if (img.dependencies[key] === true) continue;
+            if (!result.has(img)) result.set(img, new Set());
+            result.get(img)!.add(key);
+        }
+    }
+    return result;
+}
+
+function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): { artefacts: Artefact[]; conclusionFlags: Map<Artefact, Set<string>> } {
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {
@@ -1681,6 +1707,16 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
     }
 
     const hostRootId = resolveHostRootId(ruleRoot, childArts, match, hostRoots);
+
+    // Flags set on root-layer rule artefacts that leave from the conclusion layer
+    // are added to the matched host artefacts in the host root layer.
+    const conclusionFlags = computeConclusionFlags(rule, ruleRoot, childLayer, match);
+    for (const [img, keys] of conclusionFlags) {
+        for (const key of keys) {
+            img.dependencies[key] = true;
+            img.flagLayers[key] = hostRootId;
+        }
+    }
 
     const created = new Map<Artefact, Artefact>();
     const result: Artefact[] = [];
@@ -1765,7 +1801,7 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
         }
     }
 
-    return result;
+    return { artefacts: result, conclusionFlags };
 }
 
 export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): Artefact[] {
@@ -1789,7 +1825,7 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
     }
     const childLayer = childLayers[0];
 
-    return applyRuleConclusion(rule, host, application, childLayer);
+    return applyRuleConclusion(rule, host, application, childLayer).artefacts;
 }
 
 export interface DerivedRule {
@@ -1835,7 +1871,10 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
     const premiseLayers = childLayers.filter(child => child !== conclusion);
 
     // Step 1: apply the rule as if it were first-order, ignoring the other child layers of depth 2
-    const hostArtefacts = applyRuleConclusion(rule, host, application, conclusion);
+    const { artefacts: hostArtefacts, conclusionFlags } = applyRuleConclusion(rule, host, application, conclusion);
+    // The conclusion is merged into the host root; it must NOT be carried over
+    // into the derived drawings created for each premise layer.
+    const conclusionCreated = new Set<Artefact>(hostArtefacts);
 
     // Step 2: for each other child layer A with child layer B, create a new drawing
     const match = application.matchedArtefacts;
@@ -1858,7 +1897,7 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
         // Copy the host root layer's artefacts into the derived drawing (standalone snapshot)
         const origToCopy = new Map<Artefact, Artefact>();
         const hostRootArts = host.getArtefacts()
-            .filter(a => a.layerId === hostRootId && a.sortName !== "Equality");
+            .filter(a => a.layerId === hostRootId && a.sortName !== "Equality" && !conclusionCreated.has(a));
 
         const remainingHost = [...hostRootArts];
         while (remainingHost.length > 0) {
@@ -1872,8 +1911,10 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 throw new Error(`Consistency Check Failed: Cannot resolve dependencies when copying host root artefacts for derived rule '${premise.name}'.`);
             }
             const a = remainingHost.splice(idx, 1)[0];
+            const excludedFlags = conclusionFlags.get(a);
             const copiedDeps: Record<string, Artefact | boolean> = {};
             for (const [key, dep] of Object.entries(a.dependencies)) {
+                if (excludedFlags?.has(key)) continue;
                 if (typeof dep === "boolean") {
                     copiedDeps[key] = dep;
                 } else {
@@ -1888,11 +1929,14 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             const copyLayerMap: Record<string, string> = {};
             copyLayerMap[hostRootId] = derivedRootId;
             remapFlagLayers(a, copy, derived, copyLayerMap);
+            if (excludedFlags) {
+                for (const key of excludedFlags) delete copy.flagLayers[key];
+            }
             origToCopy.set(a, copy);
         }
 
         const hostRootEqualities = host.getArtefacts()
-            .filter(a => a.layerId === hostRootId && a.sortName === "Equality");
+            .filter(a => a.layerId === hostRootId && a.sortName === "Equality" && !conclusionCreated.has(a));
         for (const eq of hostRootEqualities) {
             const mappedChildren = artefactChildren(eq)
                 .map(c => origToCopy.get(c))
@@ -2084,8 +2128,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 derived.addEqualityArtefactUnchecked(uniqueChildren, childOfPremise.id, JSON.parse(JSON.stringify(eq.data)));
             }
         }
-
-        derived.setIsRule(true);
 
         derivedRules.push({ name: premise.name, drawing: derived });
     }

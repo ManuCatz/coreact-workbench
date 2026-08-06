@@ -80,7 +80,7 @@ drawing.newArtefact("Edge", {source: v1, target: v2, mono: { __flag: true, layer
 `mono: true` is equivalent to `mono: { __flag: true, layerId: <artefact's layer> }`. Passing a layer that does not exist, or that is not the artefact's layer or a descendant of it, throws a `Consistency Check Failed` error.
 
 The flag's layer affects:
-- **Rule matching**: a pattern flag matches a host flag when the relative depth between the flag layer and the artefact's layer is equal in both drawings.
+- **Rule matching**: only flags set in the rule's root layer are required for matching; a pattern flag leaving from a root layer matches a host flag when the relative depth between the flag layer and the artefact's layer is equal in both drawings. Flags leaving from child layers are part of the rule's structure, not its pattern, and are ignored during matching.
 - **Layer focus styling**: artefacts whose flag leaves from the focused layer are not dimmed.
 - **Tag-group filtering**: the tree view shows a tag group under the focused layer when any matching artefact's flag leaves from it.
 

@@ -319,6 +319,62 @@ drawingStore.loadDrawing("ComposableEdges", tempRuleDraw);
 const ruleApps = findRuleApplications(tempRuleDraw, drawing);
 console.log("ComposableEdges applications:", ruleApps.length);
 
+// Rule flag leaving from a child layer: matching must NOT require the flag in the host
+const ruleFlagInChildLayer = new Drawing(sortStore);
+const fv0 = ruleFlagInChildLayer.newArtefact("Vertex", {}, { position: [0, 0], label: "fv0" }, "root");
+const fv1 = ruleFlagInChildLayer.newArtefact("Vertex", {}, { position: [100, 0], label: "fv1" }, "root");
+const fv2 = ruleFlagInChildLayer.newArtefact("Vertex", {}, { position: [200, 0], label: "fv2" }, "root");
+ruleFlagInChildLayer.newArtefact("Edge", { source: fv0, target: fv1 }, { width: 2, bend: 0, label: "fe1" }, "root");
+ruleFlagInChildLayer.addLayer("flag-conclusion", "Flag Conclusion", "root");
+ruleFlagInChildLayer.newArtefact("Edge", { source: fv1, target: fv2, mono: { __flag: true, layerId: "flag-conclusion" } }, { width: 2, bend: 0, label: "fe2" }, "root");
+ruleFlagInChildLayer.newArtefact("Edge", { source: fv0, target: fv2 }, { width: 2, bend: 0, label: "fe3" }, "flag-conclusion");
+ruleFlagInChildLayer.setIsRule(true);
+drawingStore.saveDrawing("FlagInChildLayer", ruleFlagInChildLayer);
+
+// Host: same composable edges, without any mono flag
+const hostNoMono = new Drawing(sortStore);
+const hfv0 = hostNoMono.newArtefact("Vertex", {}, { position: [0, 0], label: "hfv0" }, "root");
+const hfv1 = hostNoMono.newArtefact("Vertex", {}, { position: [100, 0], label: "hfv1" }, "root");
+const hfv2 = hostNoMono.newArtefact("Vertex", {}, { position: [200, 0], label: "hfv2" }, "root");
+hostNoMono.newArtefact("Edge", { source: hfv0, target: hfv1 }, { width: 2, bend: 0, label: "hfe1" }, "root");
+hostNoMono.newArtefact("Edge", { source: hfv1, target: hfv2 }, { width: 2, bend: 0, label: "hfe2" }, "root");
+
+const tempFlagChildRule = new Drawing(sortStore);
+drawingStore.loadDrawing("FlagInChildLayer", tempFlagChildRule);
+const flagChildApps = findFirstOrderRuleApplications(tempFlagChildRule, hostNoMono);
+console.log("Flag-in-child-layer rule applications (expected 1, flag must not be required):", flagChildApps.length);
+
+// Control: rule flag leaving from the root layer IS required for matching
+const ruleFlagInRoot = new Drawing(sortStore);
+const rfv0 = ruleFlagInRoot.newArtefact("Vertex", {}, { position: [0, 0], label: "rfv0" }, "root");
+const rfv1 = ruleFlagInRoot.newArtefact("Vertex", {}, { position: [100, 0], label: "rfv1" }, "root");
+const rfv2 = ruleFlagInRoot.newArtefact("Vertex", {}, { position: [200, 0], label: "rfv2" }, "root");
+ruleFlagInRoot.newArtefact("Edge", { source: rfv0, target: rfv1 }, { width: 2, bend: 0, label: "rfe1" }, "root");
+ruleFlagInRoot.newArtefact("Edge", { source: rfv1, target: rfv2, mono: true }, { width: 2, bend: 0, label: "rfe2" }, "root");
+ruleFlagInRoot.addLayer("flag-root-conclusion", "Root Flag Conclusion", "root");
+ruleFlagInRoot.newArtefact("Edge", { source: rfv0, target: rfv2 }, { width: 2, bend: 0, label: "rfe3" }, "flag-root-conclusion");
+ruleFlagInRoot.setIsRule(true);
+drawingStore.saveDrawing("FlagInRoot", ruleFlagInRoot);
+
+const tempFlagRootRule = new Drawing(sortStore);
+drawingStore.loadDrawing("FlagInRoot", tempFlagRootRule);
+const flagRootApps = findFirstOrderRuleApplications(tempFlagRootRule, hostNoMono);
+console.log("Flag-in-root-layer rule applications against non-mono host (expected 0, flag must be required):", flagRootApps.length);
+
+// Applying the flag-in-child-layer rule must add the conclusion-layer flag to the matched host root artefact
+const tempFlagApplyRule = new Drawing(sortStore);
+drawingStore.loadDrawing("FlagInChildLayer", tempFlagApplyRule);
+const flagApplyApps = findFirstOrderRuleApplications(tempFlagApplyRule, hostNoMono);
+if (flagApplyApps.length > 0) {
+    const flagCreated = applyFirstOrderRule(tempFlagApplyRule, hostNoMono, flagApplyApps[0]);
+    const monoEdges = hostNoMono.getArtefacts().filter(a => a.dependencies["mono"] === true);
+    console.log("Applied FlagInChildLayer: created artefacts:", flagCreated.length,
+        "- host mono edges (expected 1 hfe2@root):",
+        monoEdges.length === 1 && monoEdges[0].getFlagLayer("mono") === "root"
+            ? `${monoEdges[0].data.label}@root`
+            : `unexpected (${monoEdges.map(e => `${e.data.label}@${e.getFlagLayer("mono")}`).join(", ")})`);
+}
+
 // Rule whose child layer contains an equality: matching must ignore it
 const ruleWithChildEq = new Drawing(sortStore);
 const cev0 = ruleWithChildEq.newArtefact("Vertex", {}, { position: [0, 0], label: "cev0" }, "root");
@@ -383,11 +439,11 @@ const secondOrderRule = new Drawing(sortStore);
 const sv0 = secondOrderRule.newArtefact("Vertex", {}, { position: [0, 0], label: "sv0" }, "root");
 const sv1 = secondOrderRule.newArtefact("Vertex", {}, { position: [100, 0], label: "sv1" }, "root");
 const sv2 = secondOrderRule.newArtefact("Vertex", {}, { position: [200, 0], label: "sv2" }, "root");
-secondOrderRule.newArtefact("Edge", { source: sv0, target: sv1 }, { width: 2, bend: 0, label: "sf" }, "root");
-secondOrderRule.newArtefact("Edge", { source: sv1, target: sv2 }, { width: 2, bend: 0, label: "sg" }, "root");
 
-// Conclusion layer (leaf child of root)
+// Conclusion layer (leaf child of root), created before sf so its flag layer exists
 secondOrderRule.addLayer("conclusion2", "Conclusion", "root");
+secondOrderRule.newArtefact("Edge", { source: sv0, target: sv1, mono: { __flag: true, layerId: "conclusion2" } }, { width: 2, bend: 0, label: "sf" }, "root");
+secondOrderRule.newArtefact("Edge", { source: sv1, target: sv2 }, { width: 2, bend: 0, label: "sg" }, "root");
 secondOrderRule.newArtefact("Edge", { source: sv0, target: sv2 }, { width: 2, bend: 0, label: "sh" }, "conclusion2");
 
 // Premise layer A (child of root) with child layer B
@@ -415,18 +471,26 @@ const soApps = findSecondOrderRuleApplications(tempSoRule, soHost);
 console.log("SecondOrderComp applications (expected 1):", soApps.length);
 if (soApps.length > 0) {
     const soResult = applySecondOrderRule(tempSoRule, soHost, soApps[0]);
-    console.log("Applied SecondOrderComp: host artefacts added:", soResult.hostArtefacts.length, "- derived rules:", soResult.derivedRules.length);
+    console.log("Applied SecondOrderComp: host artefacts added:", soResult.hostArtefacts.length, "- derived drawings:", soResult.derivedRules.length);
     for (const dr of soResult.derivedRules) {
         const layerChain = dr.drawing.getAllLayers().map(l => `${l.name}${l.parentId ? " (child)" : " (root)"}`).join(" -> ");
-        console.log(`  Derived rule '${dr.name}': isRule=${dr.drawing.isRule}, isFirstOrder=${drawingStore.checkIsFirstOrder(dr.drawing)}, layers: ${layerChain}, artefacts=${dr.drawing.getArtefacts().length}`);
+        console.log(`  Derived drawing '${dr.name}': isRule=${dr.drawing.isRule}, layers: ${layerChain}, artefacts=${dr.drawing.getArtefacts().length}`);
         for (const art of dr.drawing.getArtefacts()) {
             const layerName = dr.drawing.getLayer(art.layerId)?.name || art.layerId;
             console.log(`    - ${art.data.label || art.sortName} (${art.sortName}) in layer '${layerName}'`);
         }
-        const drApps = findFirstOrderRuleApplications(dr.drawing, soHost);
-        console.log(`  Derived rule '${dr.name}' applications against the current host (expected 0, standalone): ${drApps.length}`);
+        const hasSh = dr.drawing.getArtefacts().some(a => a.data.label === "sh");
+        const hostHasSh = soHost.getArtefacts().some(a => a.data.label === "sh" && a.layerId === "root");
+        console.log(`  Derived drawing contains 'sh' (expected false): ${hasSh}; host root contains 'sh' (expected true): ${hostHasSh}`);
+        const hostMonoEdges = soHost.getArtefacts().filter(a => a.dependencies["mono"] === true);
+        const hostMono = hostMonoEdges.length === 1 && hostMonoEdges[0].getFlagLayer("mono") === "root"
+            ? `${hostMonoEdges[0].data.label}@root`
+            : `unexpected (${hostMonoEdges.map(e => `${e.data.label}@${e.getFlagLayer("mono")}`).join(", ")})`;
+        console.log(`  Host edges with 'mono' after apply (expected he1@root): ${hostMono}`);
+        const derivedMono = dr.drawing.getArtefacts().filter(a => a.dependencies["mono"] === true);
+        console.log(`  Derived drawing edges with 'mono' (expected 0): ${derivedMono.length}`);
         drawingStore.saveDrawing("SecondOrderComp [Premise A]", dr.drawing);
-        console.log("  Saved derived rule to DrawingStore.");
+        console.log("  Saved derived drawing to DrawingStore.");
     }
 }
 
@@ -1569,7 +1633,7 @@ function renderRuleApplications(): void {
                         console.log(`Applied '${savedRule.name}': added ${created.length} artefact(s).`);
                     } else {
                         const result = applySecondOrderRule(ruleDrawing, drawing, app);
-                        console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} rule(s).`);
+                        console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} drawing(s).`);
                         for (const derived of result.derivedRules) {
                             let name = `${savedRule.name} [${derived.name}]`;
                             let suffix = 2;
@@ -1578,7 +1642,7 @@ function renderRuleApplications(): void {
                                 suffix++;
                             }
                             drawingStore.saveDrawing(name, derived.drawing);
-                            console.log(`Saved derived rule '${name}': isRule=${derived.drawing.isRule}, isFirstOrder=${drawingStore.checkIsFirstOrder(derived.drawing)}, artefacts=${derived.drawing.getArtefacts().length}.`);
+                            console.log(`Saved derived drawing '${name}': isRule=${derived.drawing.isRule}, artefacts=${derived.drawing.getArtefacts().length}.`);
                         }
                     }
                     updateCanvas();
