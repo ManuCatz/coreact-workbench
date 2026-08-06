@@ -1295,7 +1295,29 @@ function findRuleApplicationsInternal(
     };
 
     backtrack(0);
-    return results;
+
+    const uniqueResults: RuleApplication[] = [];
+    for (const r of results) {
+        if (!uniqueResults.some(u => applicationsEquivalent(host, patternSet, r, u))) {
+            uniqueResults.push(r);
+        }
+    }
+    return uniqueResults;
+}
+
+function applicationsEquivalent(
+    host: Drawing,
+    patternSet: Set<Artefact>,
+    a: RuleApplication,
+    b: RuleApplication
+): boolean {
+    for (const p of patternSet) {
+        const img1 = a.matchedArtefacts.get(p);
+        const img2 = b.matchedArtefacts.get(p);
+        if (!img1 || !img2) return false;
+        if (img1 !== img2 && !host.areEqual(img1, img2, img1.layerId)) return false;
+    }
+    return true;
 }
 
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {

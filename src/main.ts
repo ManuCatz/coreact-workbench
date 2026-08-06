@@ -391,8 +391,8 @@ drawingStore.loadDrawing("SharedEdgeTriangles", tempEqMatchRule);
 const eqMatchShared = findRuleApplications(tempEqMatchRule, hostShared);
 const eqMatchEqual = findRuleApplications(tempEqMatchRule, hostEqualEdges);
 const eqMatchDistinct = findRuleApplications(tempEqMatchRule, hostDistinctEdges);
-console.log("SharedEdgeTriangles on host with truly shared edge (expected >0):", eqMatchShared.length);
-console.log("SharedEdgeTriangles on host with provably equal edges (expected >0):", eqMatchEqual.length);
+console.log("SharedEdgeTriangles on host with truly shared edge (expected 1):", eqMatchShared.length);
+console.log("SharedEdgeTriangles on host with provably equal edges (expected 1):", eqMatchEqual.length);
 console.log("SharedEdgeTriangles on host with distinct edges (expected 0):", eqMatchDistinct.length);
 
 // 7. Render UI Menu & Interaction
