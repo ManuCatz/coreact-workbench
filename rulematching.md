@@ -147,7 +147,7 @@ The root has at least two child layers: the **conclusion** (the unique childless
    - dependencies on other premise-`A` artefacts resolve to already-created premise copies;
    - premise equalities are copied the same way.
 5. **Add the child layer `B` of `A`** (at most one, by rule condition 4) as a child of the derived root, and instantiate layer `B`'s artefacts and equalities there, resolving dependencies against the derived-root copies, premise copies, or other `B` copies as appropriate.
-6. The derived drawing is returned as `{ name: premiseName, drawing }`.
+6. The derived drawing is named `"<hostName> > <ruleName> > <premiseName>"` when an optional `names: { hostName, ruleName }` argument is passed to `applySecondOrderRule`; otherwise it falls back to the bare premise layer name. It is returned as `{ name, drawing }`.
 
 The function returns `{ hostArtefacts, derivedRules }`, where `hostArtefacts` is the conclusion content created in the host root and `derivedRules` is one entry per premise layer.
 

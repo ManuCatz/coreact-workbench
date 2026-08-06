@@ -470,7 +470,7 @@ drawingStore.loadDrawing("SecondOrderComp", tempSoRule);
 const soApps = findSecondOrderRuleApplications(tempSoRule, soHost);
 console.log("SecondOrderComp applications (expected 1):", soApps.length);
 if (soApps.length > 0) {
-    const soResult = applySecondOrderRule(tempSoRule, soHost, soApps[0]);
+    const soResult = applySecondOrderRule(tempSoRule, soHost, soApps[0], { hostName: "SO Host", ruleName: "SecondOrderComp" });
     console.log("Applied SecondOrderComp: host artefacts added:", soResult.hostArtefacts.length, "- derived drawings:", soResult.derivedRules.length);
     for (const dr of soResult.derivedRules) {
         const layerChain = dr.drawing.getAllLayers().map(l => `${l.name}${l.parentId ? " (child)" : " (root)"}`).join(" -> ");
@@ -489,8 +489,8 @@ if (soApps.length > 0) {
         console.log(`  Host edges with 'mono' after apply (expected he1@root): ${hostMono}`);
         const derivedMono = dr.drawing.getArtefacts().filter(a => a.dependencies["mono"] === true);
         console.log(`  Derived drawing edges with 'mono' (expected 0): ${derivedMono.length}`);
-        drawingStore.saveDrawing("SecondOrderComp [Premise A]", dr.drawing);
-        console.log("  Saved derived drawing to DrawingStore.");
+        drawingStore.saveDrawing(dr.name, dr.drawing);
+        console.log("  Saved derived drawing to DrawingStore as '" + dr.name + "'.");
     }
 }
 
@@ -1643,13 +1643,13 @@ function renderRuleApplications(): void {
                         const created = applyFirstOrderRule(ruleDrawing, drawing, app);
                         console.log(`Applied '${savedRule.name}': added ${created.length} artefact(s).`);
                     } else {
-                        const result = applySecondOrderRule(ruleDrawing, drawing, app);
+                        const result = applySecondOrderRule(ruleDrawing, drawing, app, { hostName: activeDrawingName ?? "Unsaved Drawing", ruleName: savedRule.name });
                         console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} drawing(s).`);
                         for (const derived of result.derivedRules) {
-                            let name = `${savedRule.name} [${derived.name}]`;
+                            let name = derived.name;
                             let suffix = 2;
                             while (drawingStore.getDrawing(name)) {
-                                name = `${savedRule.name} [${derived.name}] (${suffix})`;
+                                name = `${derived.name} (${suffix})`;
                                 suffix++;
                             }
                             drawingStore.saveDrawing(name, derived.drawing);

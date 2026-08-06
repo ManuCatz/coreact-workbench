@@ -1897,12 +1897,17 @@ export interface DerivedRule {
     drawing: Drawing;
 }
 
+export interface SecondOrderRuleNames {
+    hostName: string;
+    ruleName: string;
+}
+
 export interface SecondOrderRuleApplicationResult {
     hostArtefacts: Artefact[];
     derivedRules: DerivedRule[];
 }
 
-export function applySecondOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): SecondOrderRuleApplicationResult {
+export function applySecondOrderRule(rule: Drawing, host: Drawing, application: RuleApplication, names?: SecondOrderRuleNames): SecondOrderRuleApplicationResult {
     if (!rule.isRule) {
         throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be applied.");
     }
@@ -2193,7 +2198,10 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             }
         }
 
-        derivedRules.push({ name: premise.name, drawing: derived });
+        const derivedName = names
+            ? `${names.hostName} > ${names.ruleName} > ${premise.name}`
+            : premise.name;
+        derivedRules.push({ name: derivedName, drawing: derived });
     }
 
     return { hostArtefacts, derivedRules };
