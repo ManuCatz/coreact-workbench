@@ -284,6 +284,58 @@ drawingStore.loadDrawing("ComposableEdges", tempRuleDraw);
 const ruleApps = findRuleApplications(tempRuleDraw, drawing);
 console.log("ComposableEdges applications:", ruleApps.length);
 
+// Rule whose child layer contains an equality: matching must ignore it
+const ruleWithChildEq = new Drawing(sortStore);
+const cev0 = ruleWithChildEq.newArtefact("Vertex", {}, { position: [0, 0], label: "cev0" }, "root");
+const cev1 = ruleWithChildEq.newArtefact("Vertex", {}, { position: [100, 0], label: "cev1" }, "root");
+const cev2 = ruleWithChildEq.newArtefact("Vertex", {}, { position: [200, 0], label: "cev2" }, "root");
+ruleWithChildEq.newArtefact("Edge", { source: cev0, target: cev1 }, { width: 2, bend: 0, label: "ce1" }, "root");
+ruleWithChildEq.newArtefact("Edge", { source: cev1, target: cev2 }, { width: 2, bend: 0, label: "ce2" }, "root");
+ruleWithChildEq.addLayer("rule-pattern-eq", "Rule Pattern", "root");
+ruleWithChildEq.newArtefact("Edge", { source: cev0, target: cev2 }, { width: 2, bend: 0, label: "ce3" }, "rule-pattern-eq");
+ruleWithChildEq.newEqualityArtefact([cev0, cev1], "rule-pattern-eq");
+drawingStore.saveDrawing("ComposableEdgesChildEq", ruleWithChildEq);
+
+const tempChildEqRule = new Drawing(sortStore);
+drawingStore.loadDrawing("ComposableEdgesChildEq", tempChildEqRule);
+const childEqApps = findRuleApplications(tempChildEqRule, drawing);
+console.log("ComposableEdgesChildEq applications (child-layer equality must be ignored):", childEqApps.length);
+
+// Rule whose child-layer equality is not provably equal in the host: still applyable, equality is added
+const ruleChildEqApply = new Drawing(sortStore);
+const qv0 = ruleChildEqApply.newArtefact("Vertex", {}, { position: [0, 0], label: "qv0" }, "root");
+const qv1 = ruleChildEqApply.newArtefact("Vertex", {}, { position: [100, 0], label: "qv1" }, "root");
+const qv2 = ruleChildEqApply.newArtefact("Vertex", {}, { position: [200, 0], label: "qv2" }, "root");
+const qe1 = ruleChildEqApply.newArtefact("Edge", { source: qv0, target: qv1 }, { width: 2, bend: 0, label: "qe1" }, "root");
+const qe2 = ruleChildEqApply.newArtefact("Edge", { source: qv1, target: qv2 }, { width: 2, bend: 0, label: "qe2" }, "root");
+ruleChildEqApply.addLayer("conclusion", "Conclusion", "root");
+ruleChildEqApply.newArtefact("Edge", { source: qv0, target: qv2 }, { width: 2, bend: 0, label: "qe3" }, "conclusion");
+ruleChildEqApply.newEqualityArtefact([qv0, qv1, qv2], "conclusion");
+ruleChildEqApply.newEqualityArtefact([qe1, qe2], "conclusion");
+drawingStore.saveDrawing("ChildEqApply", ruleChildEqApply);
+
+const applyHost = new Drawing(sortStore);
+const hv0 = applyHost.newArtefact("Vertex", {}, { position: [0, 0], label: "hv0" }, "root");
+const hv1 = applyHost.newArtefact("Vertex", {}, { position: [100, 0], label: "hv1" }, "root");
+const hv2 = applyHost.newArtefact("Vertex", {}, { position: [200, 0], label: "hv2" }, "root");
+applyHost.newArtefact("Edge", { source: hv0, target: hv1 }, { width: 2, bend: 0, label: "he1" }, "root");
+applyHost.newArtefact("Edge", { source: hv1, target: hv2 }, { width: 2, bend: 0, label: "he2" }, "root");
+
+const tempApplyRule = new Drawing(sortStore);
+drawingStore.loadDrawing("ChildEqApply", tempApplyRule);
+const applyApps = findFirstOrderRuleApplications(tempApplyRule, applyHost);
+console.log("ChildEqApply first-order applications:", applyApps.length);
+if (applyApps.length > 0) {
+    const applied = applyFirstOrderRule(tempApplyRule, applyHost, applyApps[0]);
+    const addedEqualities = applied.filter(a => a.sortName === "Equality");
+    console.log("Applied ChildEqApply; added artefacts:", applied.length, "- equalities added:", addedEqualities.length);
+    for (const eq of addedEqualities) {
+        if (eq instanceof EqualityArtefact) {
+            console.log("  Added equality:", eq.children.map(c => c.data.label || c.sortName).join(" = "));
+        }
+    }
+}
+
 // 7. Render UI Menu & Interaction
 let activeDrawingName: string | null = "Rule Drawing Demo";
 let inspectedArtefact: Artefact | null = null;

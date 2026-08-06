@@ -458,6 +458,16 @@ export class Drawing {
         }
     }
 
+    public addEqualityArtefactUnchecked(
+        children: Artefact[],
+        layerId: string,
+        data: Record<string, any> = {}
+    ): EqualityArtefact {
+        const eq = new EqualityArtefact(children, data, layerId);
+        this.artefacts.push(eq);
+        return eq;
+    }
+
     public newEqualityArtefact(
         artefacts: Artefact[],
         layerId?: string,
@@ -1160,8 +1170,11 @@ export interface RuleApplication {
 }
 
 function extractEqualityConstraints(rule: Drawing): Array<{ children: Artefact[] }> {
+    const rootLayerIds = rule.getAllLayers()
+        .filter(l => l.parentId === null)
+        .map(l => l.id);
     return rule.getArtefacts()
-        .filter(a => a.sortName === "Equality")
+        .filter(a => a.sortName === "Equality" && rootLayerIds.includes(a.layerId))
         .map(a => ({
             children: a instanceof EqualityArtefact
                 ? a.children
@@ -1376,6 +1389,38 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
         const newArt = host.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), hostRootId);
         created.set(a, newArt);
         result.push(newArt);
+    }
+
+    // Re-create the rule's child-layer equalities in the host drawing (without validation)
+    const childEqualities = rule.getArtefacts()
+        .filter(a => a.sortName === "Equality" && a.layerId === childLayer.id);
+
+    for (const eq of childEqualities) {
+        const ruleChildren = eq instanceof EqualityArtefact
+            ? eq.children
+            : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+
+        const resolvedChildren: Artefact[] = [];
+        for (const child of ruleChildren) {
+            if (child.layerId === ruleRoot.id) {
+                const img = match.get(child);
+                if (!img) {
+                    throw new Error(`Consistency Check Failed: No match found for rule equality child '${child.data.label || child.sortName}'.`);
+                }
+                resolvedChildren.push(img);
+            } else {
+                const copy = created.get(child);
+                if (!copy) {
+                    throw new Error(`Consistency Check Failed: No copy created for rule equality child '${child.data.label || child.sortName}'.`);
+                }
+                resolvedChildren.push(copy);
+            }
+        }
+
+        const uniqueChildren = Array.from(new Set(resolvedChildren));
+        if (uniqueChildren.length >= 2) {
+            result.push(host.addEqualityArtefactUnchecked(uniqueChildren, hostRootId, JSON.parse(JSON.stringify(eq.data))));
+        }
     }
 
     return result;
