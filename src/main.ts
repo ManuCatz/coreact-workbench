@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, applyFirstOrderRule, type SortDefinition } from './index';
+import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, findSecondOrderRuleApplications, applyFirstOrderRule, applySecondOrderRule, type SortDefinition } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -342,6 +342,80 @@ if (applyApps.length > 0) {
     }
 }
 
+// --- Second-Order Rules Demo ---
+console.log("--- Second-Order Rules Demo ---");
+
+// Build a second-order rule: the root layer holds two composable edges, the
+// conclusion layer (leaf child of root) holds the composed edge, and a premise
+// layer A (with its own child layer B) is ignored during first-order application.
+const secondOrderRule = new Drawing(sortStore);
+const sv0 = secondOrderRule.newArtefact("Vertex", {}, { position: [0, 0], label: "sv0" }, "root");
+const sv1 = secondOrderRule.newArtefact("Vertex", {}, { position: [100, 0], label: "sv1" }, "root");
+const sv2 = secondOrderRule.newArtefact("Vertex", {}, { position: [200, 0], label: "sv2" }, "root");
+secondOrderRule.newArtefact("Edge", { source: sv0, target: sv1 }, { width: 2, bend: 0, label: "sf" }, "root");
+secondOrderRule.newArtefact("Edge", { source: sv1, target: sv2 }, { width: 2, bend: 0, label: "sg" }, "root");
+
+// Conclusion layer (leaf child of root)
+secondOrderRule.addLayer("conclusion2", "Conclusion", "root");
+secondOrderRule.newArtefact("Edge", { source: sv0, target: sv2 }, { width: 2, bend: 0, label: "sh" }, "conclusion2");
+
+// Premise layer A (child of root) with child layer B
+secondOrderRule.addLayer("premise-a", "Premise A", "root");
+const sdv = secondOrderRule.newArtefact("Vertex", {}, { position: [150, 150], label: "sdv" }, "premise-a");
+secondOrderRule.addLayer("premise-b", "Premise B", "premise-a");
+secondOrderRule.newArtefact("Edge", { source: sdv, target: sv1 }, { width: 2, bend: 0, label: "sb" }, "premise-b");
+
+secondOrderRule.setIsRule(true);
+console.log("Rule structure valid:", secondOrderRule.checkRuleConditions().isRule);
+drawingStore.saveDrawing("SecondOrderComp", secondOrderRule);
+console.log("Saved 'SecondOrderComp', isRule =", drawingStore.getDrawing("SecondOrderComp")!.isRule, ", isFirstOrder =", drawingStore.getDrawing("SecondOrderComp")!.isFirstOrder);
+
+// Host: two composable edges, like the first-order Comp host
+const soHost = new Drawing(sortStore);
+const h0 = soHost.newArtefact("Vertex", {}, { position: [0, 0], label: "h0" }, "root");
+const h1 = soHost.newArtefact("Vertex", {}, { position: [100, 0], label: "h1" }, "root");
+const h2 = soHost.newArtefact("Vertex", {}, { position: [200, 0], label: "h2" }, "root");
+soHost.newArtefact("Edge", { source: h0, target: h1 }, { width: 2, bend: 0, label: "he1" }, "root");
+soHost.newArtefact("Edge", { source: h1, target: h2 }, { width: 2, bend: 0, label: "he2" }, "root");
+
+const tempSoRule = new Drawing(sortStore);
+drawingStore.loadDrawing("SecondOrderComp", tempSoRule);
+const soApps = findSecondOrderRuleApplications(tempSoRule, soHost);
+console.log("SecondOrderComp applications (expected 1):", soApps.length);
+if (soApps.length > 0) {
+    const soResult = applySecondOrderRule(tempSoRule, soHost, soApps[0]);
+    console.log("Applied SecondOrderComp: host artefacts added:", soResult.hostArtefacts.length, "- derived rules:", soResult.derivedRules.length);
+    for (const dr of soResult.derivedRules) {
+        const layerChain = dr.drawing.getAllLayers().map(l => `${l.name}${l.parentId ? " (child)" : " (root)"}`).join(" -> ");
+        console.log(`  Derived rule '${dr.name}': isRule=${dr.drawing.isRule}, isFirstOrder=${drawingStore.checkIsFirstOrder(dr.drawing)}, layers: ${layerChain}, artefacts=${dr.drawing.getArtefacts().length}`);
+        for (const art of dr.drawing.getArtefacts()) {
+            const layerName = dr.drawing.getLayer(art.layerId)?.name || art.layerId;
+            console.log(`    - ${art.data.label || art.sortName} (${art.sortName}) in layer '${layerName}'`);
+        }
+        const drApps = findFirstOrderRuleApplications(dr.drawing, soHost);
+        console.log(`  Derived rule '${dr.name}' applications against the current host (expected 0, standalone): ${drApps.length}`);
+        drawingStore.saveDrawing("SecondOrderComp [Premise A]", dr.drawing);
+        console.log("  Saved derived rule to DrawingStore.");
+    }
+}
+
+// Verify the new rule-structure restriction: a child layer of the root with 2 children is invalid
+console.log("--- Rule restriction demo: child of root with 2 children ---");
+const badRule = new Drawing(sortStore);
+badRule.newArtefact("Vertex", {}, { position: [0, 0], label: "bv0" }, "root");
+badRule.addLayer("bad-conclusion", "Bad Conclusion", "root");
+badRule.addLayer("bad-a", "Bad A", "root");
+badRule.addLayer("bad-b1", "Bad B1", "bad-a");
+badRule.addLayer("bad-b2", "Bad B2", "bad-a");
+const badCheck = badRule.checkRuleConditions();
+console.log("Bad rule (child with 2 children) isRule expected false:", badCheck.isRule, "-", badCheck.reason);
+try {
+    badRule.setIsRule(true);
+    console.log("Bad rule was wrongly accepted as a rule!");
+} catch (e) {
+    console.log("Caught expected error rejecting bad rule:", (e as Error).message);
+}
+
 // Rule matching up to host equalities: two triangles sharing one edge may match
 // host triangles whose edges are distinct but provably equal
 console.log("--- Matching Up To Equality Demo ---");
@@ -398,8 +472,8 @@ drawingStore.loadDrawing("SharedEdgeTriangles", tempEqMatchRule);
 const eqMatchShared = findRuleApplications(tempEqMatchRule, hostShared);
 const eqMatchEqual = findRuleApplications(tempEqMatchRule, hostEqualEdges);
 const eqMatchDistinct = findRuleApplications(tempEqMatchRule, hostDistinctEdges);
-console.log("SharedEdgeTriangles on host with truly shared edge (expected 1):", eqMatchShared.length);
-console.log("SharedEdgeTriangles on host with provably equal edges (expected 1):", eqMatchEqual.length);
+console.log("SharedEdgeTriangles on host with truly shared edge (expected 2):", eqMatchShared.length);
+console.log("SharedEdgeTriangles on host with provably equal edges (expected 2):", eqMatchEqual.length);
 console.log("SharedEdgeTriangles on host with distinct edges (expected 0):", eqMatchDistinct.length);
 
 // 7. Render UI Menu & Interaction
@@ -481,7 +555,7 @@ function updateActiveDrawingBanner(): void {
             } else if (drawingStore.checkIsFirstOrder(drawing)) {
                 tagEl.innerHTML = `<span class="first-order-badge" title="First-order rule: root layer has only one child">First-Order Rule</span>`;
             } else {
-                tagEl.innerHTML = `<span class="rule-badge" title="This drawing is explicitly marked as a rule">Rule</span>`;
+                tagEl.innerHTML = `<span class="second-order-badge" title="Second-order rule: root layer has several child layers">Second-Order Rule</span>`;
             }
         } else {
             tagEl.innerHTML = "";
@@ -1251,9 +1325,9 @@ function renderDrawingsStore(): void {
                 badge.textContent = "First-Order";
                 badge.title = "First-order rule: root layer has only one child";
             } else {
-                badge.className = "rule-badge";
-                badge.textContent = "Rule";
-                badge.title = "This drawing satisfies rule conditions";
+                badge.className = "second-order-badge";
+                badge.textContent = "Second-Order";
+                badge.title = "Second-order rule: root layer has several child layers";
             }
             rowDiv.appendChild(badge);
         }
@@ -1333,14 +1407,12 @@ function renderDrawingsStore(): void {
         deleteBtn.textContent = "×";
         deleteBtn.title = `Delete drawing '${savedDrawing.name}'`;
         deleteBtn.addEventListener("click", () => {
-            if (confirm(`Delete drawing '${savedDrawing.name}'?`)) {
-                if (savedDrawing.name === activeDrawingName) {
-                    activeDrawingName = null;
-                }
-                drawingStore.deleteDrawing(savedDrawing.name);
-                updateActiveDrawingBanner();
-                renderDrawingsStore();
+            if (savedDrawing.name === activeDrawingName) {
+                activeDrawingName = null;
             }
+            drawingStore.deleteDrawing(savedDrawing.name);
+            updateActiveDrawingBanner();
+            renderDrawingsStore();
         });
 
         rowDiv.appendChild(loadBtn);
@@ -1385,20 +1457,15 @@ function renderRuleApplications(): void {
         try {
             applications = savedRule.isFirstOrder
                 ? findFirstOrderRuleApplications(ruleDrawing, drawing)
-                : findRuleApplications(ruleDrawing, drawing);
+                : findSecondOrderRuleApplications(ruleDrawing, drawing);
         } catch {
             continue;
         }
 
-        let patternArts: Artefact[];
-        if (savedRule.isFirstOrder) {
-            const ruleRootId = ruleDrawing.getAllLayers().find(l => l.parentId === null)?.id;
-            patternArts = ruleRootId
-                ? ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === ruleRootId)
-                : ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
-        } else {
-            patternArts = ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
-        }
+        const ruleRootId = ruleDrawing.getAllLayers().find(l => l.parentId === null)?.id;
+        const patternArts: Artefact[] = ruleRootId
+            ? ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === ruleRootId)
+            : ruleDrawing.getArtefacts().filter(a => a.sortName !== "Equality");
         const dependedOn = new Set<Artefact>();
         for (const a of patternArts) {
             for (const dep of Object.values(a.dependencies)) {
@@ -1414,7 +1481,7 @@ function renderRuleApplications(): void {
             applicationCount++;
 
             const rowDiv = document.createElement("div");
-            rowDiv.className = `rule-app-row${savedRule.isFirstOrder ? " first-order" : " not-applyable"}`;
+            rowDiv.className = `rule-app-row${savedRule.isFirstOrder ? " first-order" : " second-order"}`;
 
             const nameSpan = document.createElement("div");
             nameSpan.className = "rule-app-name";
@@ -1425,6 +1492,12 @@ function renderRuleApplications(): void {
                 badge.className = "first-order-badge";
                 badge.textContent = "First-Order";
                 badge.title = "First-order rule: root layer has only one child";
+                nameSpan.appendChild(badge);
+            } else {
+                const badge = document.createElement("span");
+                badge.className = "second-order-badge";
+                badge.textContent = "Second-Order";
+                badge.title = "Second-order rule: root layer has several child layers";
                 nameSpan.appendChild(badge);
             }
 
@@ -1443,29 +1516,43 @@ function renderRuleApplications(): void {
             rowDiv.appendChild(nameSpan);
             rowDiv.appendChild(matchSpan);
 
-            if (savedRule.isFirstOrder) {
-                const applyBtn = document.createElement("button");
-                applyBtn.className = "apply-btn";
-                applyBtn.textContent = "Apply";
-                applyBtn.title = "Apply this first-order rule to the matched artefacts";
-                applyBtn.addEventListener("click", (ev) => {
-                    ev.stopPropagation();
-                    try {
+            const applyBtn = document.createElement("button");
+            applyBtn.className = "apply-btn";
+            applyBtn.textContent = "Apply";
+            applyBtn.title = savedRule.isFirstOrder
+                ? "Apply this first-order rule to the matched artefacts"
+                : "Apply this second-order rule to the matched artefacts";
+            applyBtn.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                try {
+                    if (savedRule.isFirstOrder) {
                         const created = applyFirstOrderRule(ruleDrawing, drawing, app);
                         console.log(`Applied '${savedRule.name}': added ${created.length} artefact(s).`);
-                        updateCanvas();
-                        renderMenu();
-                        renderInspector();
-                        renderLayersTree();
-                        renderDrawingsStore();
-                    } catch (err) {
-                        alert(`Error applying rule '${savedRule.name}':\n${(err as Error).message}`);
+                    } else {
+                        const result = applySecondOrderRule(ruleDrawing, drawing, app);
+                        console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} rule(s).`);
+                        for (const derived of result.derivedRules) {
+                            let name = `${savedRule.name} [${derived.name}]`;
+                            let suffix = 2;
+                            while (drawingStore.getDrawing(name)) {
+                                name = `${savedRule.name} [${derived.name}] (${suffix})`;
+                                suffix++;
+                            }
+                            drawingStore.saveDrawing(name, derived.drawing);
+                            console.log(`Saved derived rule '${name}': isRule=${derived.drawing.isRule}, isFirstOrder=${drawingStore.checkIsFirstOrder(derived.drawing)}, artefacts=${derived.drawing.getArtefacts().length}.`);
+                        }
                     }
-                });
-                rowDiv.appendChild(applyBtn);
-            } else {
-                rowDiv.title = "Only first-order rules can be applied";
-            }
+                    updateCanvas();
+                    renderMenu();
+                    renderInspector();
+                    renderLayersTree();
+                    renderDrawingsStore();
+                    renderRuleApplications();
+                } catch (err) {
+                    alert(`Error applying rule '${savedRule.name}':\n${(err as Error).message}`);
+                }
+            });
+            rowDiv.appendChild(applyBtn);
 
             const activeSet = app.hostArtefacts;
 

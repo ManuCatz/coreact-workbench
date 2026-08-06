@@ -74,13 +74,13 @@
         border-color: #8e44ad;
         background-color: #ede4f5;
       }
-      .rule-app-row.not-applyable {
-        opacity: 0.6;
-        cursor: default;
+      .rule-app-row.second-order {
+        border-left: 3px solid #e67e22;
+        background-color: #fdf2e9;
       }
-      .rule-app-row.not-applyable:hover {
-        background-color: #f8f9fa;
-        border-color: #e9ecef;
+      .rule-app-row.second-order:hover {
+        border-color: #e67e22;
+        background-color: #fbe5d3;
       }
       .apply-btn {
         position: absolute;
@@ -387,10 +387,24 @@
         letter-spacing: 0.5px;
         margin-left: 4px;
       }
+      .second-order-badge {
+        font-size: 0.7em;
+        font-weight: bold;
+        background-color: #e67e22;
+        color: white;
+        padding: 2px 5px;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-left: 4px;
+      }
       .rule-badge-invalid {
         background-color: #e74c3c;
       }
       .rule-app-name .first-order-badge {
+        margin-left: 6px;
+      }
+      .rule-app-name .second-order-badge {
         margin-left: 6px;
       }
       .active-badge {

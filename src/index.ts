@@ -205,6 +205,17 @@ export function checkRuleStructure(layers: Array<{ id: string; name: string; par
         };
     }
 
+    // Rule condition 4: Each child layer of the root layer has at most one child layer
+    for (const child of rootChildren) {
+        const childrenOfChild = layers.filter(l => l.parentId === child.id);
+        if (childrenOfChild.length > 1) {
+            return {
+                isRule: false,
+                reason: `Child layer '${child.name}' of the root layer has ${childrenOfChild.length} child layers (at most 1 allowed).`
+            };
+        }
+    }
+
     return { isRule: true };
 }
 
@@ -214,7 +225,7 @@ export class Drawing {
     private focusedLayerId: string | null = null;
     private ruleFlag: boolean = false;
 
-    constructor(private sortStore: SortStore) {
+    constructor(public sortStore: SortStore) {
         this.addLayer("root", "Root Layer", null, "#3498db", false);
     }
 
@@ -1431,7 +1442,7 @@ function applicationsEquivalent(
     return true;
 }
 
-export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+function validateRuleDrawing(rule: Drawing): void {
     if (!rule.isRule) {
         throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be used as a rule.");
     }
@@ -1439,19 +1450,27 @@ export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplicat
     if (!ruleStructure.isRule) {
         throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
     }
+}
+
+function findRootRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+    const rootLayers = rule.getAllLayers().filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        return [];
+    }
+    const root = rootLayers[0];
+    const rootArts = rule.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === root.id);
+    return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule));
+}
+
+export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+    validateRuleDrawing(rule);
 
     const patternArts = rule.getArtefacts().filter(a => a.sortName !== "Equality");
     return findRuleApplicationsInternal(host, patternArts, extractEqualityConstraints(rule));
 }
 
 export function findFirstOrderRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
-    if (!rule.isRule) {
-        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be used as a rule.");
-    }
-    const ruleStructure = rule.checkRuleConditions();
-    if (!ruleStructure.isRule) {
-        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
-    }
+    validateRuleDrawing(rule);
 
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
@@ -1464,30 +1483,62 @@ export function findFirstOrderRuleApplications(rule: Drawing, host: Drawing): Ru
         return [];
     }
 
-    const rootArts = rule.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === root.id);
-    return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule));
+    return findRootRuleApplications(rule, host);
 }
 
-export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): Artefact[] {
-    if (!rule.isRule) {
-        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be applied.");
-    }
-    const ruleStructure = rule.checkRuleConditions();
-    if (!ruleStructure.isRule) {
-        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
-    }
+export function findSecondOrderRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+    validateRuleDrawing(rule);
 
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {
-        throw new Error("Consistency Check Failed: Applying a first-order rule requires the rule to have exactly one root layer.");
+        return [];
+    }
+    const root = rootLayers[0];
+    const childLayers = layers.filter(l => l.parentId === root.id);
+    if (childLayers.length < 2) {
+        return [];
+    }
+
+    return findRootRuleApplications(rule, host);
+}
+
+function resolveHostRootId(
+    ruleRoot: Layer,
+    ruleArts: Artefact[],
+    match: Map<Artefact, Artefact>,
+    hostRoots: Layer[]
+): string {
+    const anchorLayerIds = new Set<string>();
+    for (const a of ruleArts) {
+        for (const dep of Object.values(a.dependencies)) {
+            if (typeof dep !== "boolean" && dep.layerId === ruleRoot.id && match.has(dep)) {
+                anchorLayerIds.add(match.get(dep)!.layerId);
+            }
+        }
+    }
+    if (anchorLayerIds.size === 0) {
+        return hostRoots[0].id;
+    } else if (anchorLayerIds.size === 1) {
+        return Array.from(anchorLayerIds)[0];
+    } else {
+        throw new Error("Consistency Check Failed: Matched artefacts span multiple root layers; cannot determine target layer.");
+    }
+}
+
+function artefactChildren(art: Artefact): Artefact[] {
+    return art instanceof EqualityArtefact
+        ? art.children
+        : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+}
+
+function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): Artefact[] {
+    const layers = rule.getAllLayers();
+    const rootLayers = layers.filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        throw new Error("Consistency Check Failed: Applying a rule requires the rule to have exactly one root layer.");
     }
     const ruleRoot = rootLayers[0];
-    const childLayers = layers.filter(l => l.parentId === ruleRoot.id);
-    if (childLayers.length !== 1) {
-        throw new Error("Consistency Check Failed: Applying a first-order rule requires the rule's root layer to have exactly one child layer.");
-    }
-    const childLayer = childLayers[0];
 
     const childArts = rule.getArtefacts()
         .filter(a => a.layerId === childLayer.id && a.sortName !== "Equality");
@@ -1499,23 +1550,7 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
         throw new Error("Consistency Check Failed: Host drawing has no root layer to add artefacts to.");
     }
 
-    const anchorLayerIds = new Set<string>();
-    for (const a of childArts) {
-        for (const dep of Object.values(a.dependencies)) {
-            if (typeof dep !== "boolean" && dep.layerId === ruleRoot.id && match.has(dep)) {
-                anchorLayerIds.add(match.get(dep)!.layerId);
-            }
-        }
-    }
-
-    let hostRootId: string;
-    if (anchorLayerIds.size === 0) {
-        hostRootId = hostRoots[0].id;
-    } else if (anchorLayerIds.size === 1) {
-        hostRootId = Array.from(anchorLayerIds)[0];
-    } else {
-        throw new Error("Consistency Check Failed: Matched artefacts span multiple root layers; cannot determine target layer.");
-    }
+    const hostRootId = resolveHostRootId(ruleRoot, childArts, match, hostRoots);
 
     const created = new Map<Artefact, Artefact>();
     const result: Artefact[] = [];
@@ -1540,7 +1575,7 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
                 return false;
             });
             const label = unresolved ? (unresolved.data.label || unresolved.sortName) : "unknown";
-            throw new Error(`Consistency Check Failed: Cannot resolve dependencies when applying first-order rule (artefact '${label}').`);
+            throw new Error(`Consistency Check Failed: Cannot resolve dependencies when applying rule (artefact '${label}').`);
         }
 
         const a = remaining.splice(idx, 1)[0];
@@ -1573,12 +1608,8 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
         .filter(a => a.sortName === "Equality" && a.layerId === childLayer.id);
 
     for (const eq of childEqualities) {
-        const ruleChildren = eq instanceof EqualityArtefact
-            ? eq.children
-            : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
-
         const resolvedChildren: Artefact[] = [];
-        for (const child of ruleChildren) {
+        for (const child of artefactChildren(eq)) {
             if (child.layerId === ruleRoot.id) {
                 const img = match.get(child);
                 if (!img) {
@@ -1601,4 +1632,318 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
     }
 
     return result;
+}
+
+export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): Artefact[] {
+    if (!rule.isRule) {
+        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be applied.");
+    }
+    const ruleStructure = rule.checkRuleConditions();
+    if (!ruleStructure.isRule) {
+        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
+    }
+
+    const layers = rule.getAllLayers();
+    const rootLayers = layers.filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        throw new Error("Consistency Check Failed: Applying a first-order rule requires the rule to have exactly one root layer.");
+    }
+    const ruleRoot = rootLayers[0];
+    const childLayers = layers.filter(l => l.parentId === ruleRoot.id);
+    if (childLayers.length !== 1) {
+        throw new Error("Consistency Check Failed: Applying a first-order rule requires the rule's root layer to have exactly one child layer.");
+    }
+    const childLayer = childLayers[0];
+
+    return applyRuleConclusion(rule, host, application, childLayer);
+}
+
+export interface DerivedRule {
+    name: string;
+    drawing: Drawing;
+}
+
+export interface SecondOrderRuleApplicationResult {
+    hostArtefacts: Artefact[];
+    derivedRules: DerivedRule[];
+}
+
+export function applySecondOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): SecondOrderRuleApplicationResult {
+    if (!rule.isRule) {
+        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be applied.");
+    }
+    const ruleStructure = rule.checkRuleConditions();
+    if (!ruleStructure.isRule) {
+        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
+    }
+
+    const layers = rule.getAllLayers();
+    const rootLayers = layers.filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        throw new Error("Consistency Check Failed: Applying a second-order rule requires the rule to have exactly one root layer.");
+    }
+    const ruleRoot = rootLayers[0];
+    const childLayers = layers.filter(l => l.parentId === ruleRoot.id);
+    if (childLayers.length < 2) {
+        throw new Error("Consistency Check Failed: Applying a second-order rule requires the rule's root layer to have at least two child layers.");
+    }
+
+    // The conclusion is the unique child of the root layer that has no children of its own
+    const conclusion = childLayers.find(child => {
+        const childrenOfChild = layers.filter(l => l.parentId === child.id);
+        return childrenOfChild.length === 0;
+    });
+    if (!conclusion) {
+        throw new Error("Consistency Check Failed: A second-order rule requires exactly one child layer of the root layer without children.");
+    }
+
+    // The premise layers are the other depth-2 child layers; each has at most one child layer (rule condition 4)
+    const premiseLayers = childLayers.filter(child => child !== conclusion);
+
+    // Step 1: apply the rule as if it were first-order, ignoring the other child layers of depth 2
+    const hostArtefacts = applyRuleConclusion(rule, host, application, conclusion);
+
+    // Step 2: for each other child layer A with child layer B, create a new drawing
+    const match = application.matchedArtefacts;
+    const hostRoots = host.getAllLayers().filter(l => l.parentId === null);
+    if (hostRoots.length === 0) {
+        throw new Error("Consistency Check Failed: Host drawing has no root layer to add artefacts to.");
+    }
+
+    const derivedRules: DerivedRule[] = [];
+
+    for (const premise of premiseLayers) {
+        const premiseArts = rule.getArtefacts()
+            .filter(a => a.layerId === premise.id && a.sortName !== "Equality");
+
+        const hostRootId = resolveHostRootId(ruleRoot, premiseArts, match, hostRoots);
+
+        const derived = new Drawing(rule.sortStore);
+        const derivedRootId = "root";
+
+        // Copy the host root layer's artefacts into the derived drawing (standalone snapshot)
+        const origToCopy = new Map<Artefact, Artefact>();
+        const hostRootArts = host.getArtefacts()
+            .filter(a => a.layerId === hostRootId && a.sortName !== "Equality");
+
+        const remainingHost = [...hostRootArts];
+        while (remainingHost.length > 0) {
+            const idx = remainingHost.findIndex(a =>
+                Object.values(a.dependencies).every(dep =>
+                    typeof dep === "boolean" ||
+                    (typeof dep !== "boolean" && (dep.layerId !== hostRootId || origToCopy.has(dep)))
+                )
+            );
+            if (idx === -1) {
+                throw new Error(`Consistency Check Failed: Cannot resolve dependencies when copying host root artefacts for derived rule '${premise.name}'.`);
+            }
+            const a = remainingHost.splice(idx, 1)[0];
+            const copiedDeps: Record<string, Artefact | boolean> = {};
+            for (const [key, dep] of Object.entries(a.dependencies)) {
+                if (typeof dep === "boolean") {
+                    copiedDeps[key] = dep;
+                } else {
+                    const copy = origToCopy.get(dep);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for host root artefact '${dep.data.label || dep.sortName}'.`);
+                    }
+                    copiedDeps[key] = copy;
+                }
+            }
+            const copy = derived.newArtefact(a.sortName, copiedDeps, JSON.parse(JSON.stringify(a.data)), derivedRootId);
+            origToCopy.set(a, copy);
+        }
+
+        const hostRootEqualities = host.getArtefacts()
+            .filter(a => a.layerId === hostRootId && a.sortName === "Equality");
+        for (const eq of hostRootEqualities) {
+            const mappedChildren = artefactChildren(eq)
+                .map(c => origToCopy.get(c))
+                .filter((c): c is Artefact => c !== undefined);
+            const uniqueChildren = Array.from(new Set(mappedChildren));
+            if (uniqueChildren.length >= 2) {
+                derived.addEqualityArtefactUnchecked(uniqueChildren, derivedRootId, JSON.parse(JSON.stringify(eq.data)));
+            }
+        }
+
+        // Instantiate the premise layer A's artefacts in the derived root layer
+        const aCreated = new Map<Artefact, Artefact>();
+        const remainingA = [...premiseArts];
+        while (remainingA.length > 0) {
+            const idx = remainingA.findIndex(a =>
+                Object.values(a.dependencies).every(dep =>
+                    typeof dep === "boolean" ||
+                    (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) ||
+                    (dep.layerId === premise.id && aCreated.has(dep))
+                )
+            );
+            if (idx === -1) {
+                const unresolved = remainingA.find(a => {
+                    for (const dep of Object.values(a.dependencies)) {
+                        if (typeof dep === "boolean") continue;
+                        if (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) continue;
+                        if (dep.layerId === premise.id && aCreated.has(dep)) continue;
+                        return true;
+                    }
+                    return false;
+                });
+                const label = unresolved ? (unresolved.data.label || unresolved.sortName) : "unknown";
+                throw new Error(`Consistency Check Failed: Cannot resolve dependencies when instantiating premise layer '${premise.name}' (artefact '${label}').`);
+            }
+
+            const a = remainingA.splice(idx, 1)[0];
+            const newDeps: Record<string, Artefact | boolean> = {};
+            for (const [key, dep] of Object.entries(a.dependencies)) {
+                if (typeof dep === "boolean") {
+                    newDeps[key] = dep;
+                } else if (dep.layerId === ruleRoot.id) {
+                    const img = match.get(dep);
+                    const copy = img ? origToCopy.get(img) : undefined;
+                    if (!img || !copy) {
+                        throw new Error(`Consistency Check Failed: No copy found for matched rule artefact '${dep.data.label || dep.sortName}'.`);
+                    }
+                    newDeps[key] = copy;
+                } else {
+                    const copy = aCreated.get(dep);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for premise artefact '${dep.data.label || dep.sortName}'.`);
+                    }
+                    newDeps[key] = copy;
+                }
+            }
+            const newArt = derived.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), derivedRootId);
+            aCreated.set(a, newArt);
+        }
+
+        const premiseEqualities = rule.getArtefacts()
+            .filter(a => a.layerId === premise.id && a.sortName === "Equality");
+        for (const eq of premiseEqualities) {
+            const resolvedChildren: Artefact[] = [];
+            for (const child of artefactChildren(eq)) {
+                if (child.layerId === ruleRoot.id) {
+                    const img = match.get(child);
+                    const copy = img ? origToCopy.get(img) : undefined;
+                    if (!img || !copy) {
+                        throw new Error(`Consistency Check Failed: No copy found for matched rule equality child '${child.data.label || child.sortName}'.`);
+                    }
+                    resolvedChildren.push(copy);
+                } else {
+                    const copy = aCreated.get(child);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for premise equality child '${child.data.label || child.sortName}'.`);
+                    }
+                    resolvedChildren.push(copy);
+                }
+            }
+            const uniqueChildren = Array.from(new Set(resolvedChildren));
+            if (uniqueChildren.length >= 2) {
+                derived.addEqualityArtefactUnchecked(uniqueChildren, derivedRootId, JSON.parse(JSON.stringify(eq.data)));
+            }
+        }
+
+        // The child layer B of the premise layer A (at most one, by rule condition 4)
+        const childOfPremise = rule.getAllLayers().filter(l => l.parentId === premise.id)[0];
+        if (!childOfPremise) {
+            throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' has no child layer.`);
+        }
+
+        derived.addLayer(childOfPremise.id, childOfPremise.name, derivedRootId, childOfPremise.color, childOfPremise.colorEnabled);
+
+        // Copy the child layer B's artefacts, adapted to this parent
+        const bArts = rule.getArtefacts()
+            .filter(a => a.layerId === childOfPremise.id && a.sortName !== "Equality");
+        const bCreated = new Map<Artefact, Artefact>();
+        const remainingB = [...bArts];
+        while (remainingB.length > 0) {
+            const idx = remainingB.findIndex(a =>
+                Object.values(a.dependencies).every(dep =>
+                    typeof dep === "boolean" ||
+                    (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) ||
+                    (dep.layerId === premise.id && aCreated.has(dep)) ||
+                    (dep.layerId === childOfPremise.id && bCreated.has(dep))
+                )
+            );
+            if (idx === -1) {
+                const unresolved = remainingB.find(a => {
+                    for (const dep of Object.values(a.dependencies)) {
+                        if (typeof dep === "boolean") continue;
+                        if (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) continue;
+                        if (dep.layerId === premise.id && aCreated.has(dep)) continue;
+                        if (dep.layerId === childOfPremise.id && bCreated.has(dep)) continue;
+                        return true;
+                    }
+                    return false;
+                });
+                const label = unresolved ? (unresolved.data.label || unresolved.sortName) : "unknown";
+                throw new Error(`Consistency Check Failed: Cannot resolve dependencies when copying child layer '${childOfPremise.name}' (artefact '${label}').`);
+            }
+
+            const a = remainingB.splice(idx, 1)[0];
+            const newDeps: Record<string, Artefact | boolean> = {};
+            for (const [key, dep] of Object.entries(a.dependencies)) {
+                if (typeof dep === "boolean") {
+                    newDeps[key] = dep;
+                } else if (dep.layerId === ruleRoot.id) {
+                    const img = match.get(dep);
+                    const copy = img ? origToCopy.get(img) : undefined;
+                    if (!img || !copy) {
+                        throw new Error(`Consistency Check Failed: No copy found for matched rule artefact '${dep.data.label || dep.sortName}'.`);
+                    }
+                    newDeps[key] = copy;
+                } else if (dep.layerId === premise.id) {
+                    const copy = aCreated.get(dep);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for premise artefact '${dep.data.label || dep.sortName}'.`);
+                    }
+                    newDeps[key] = copy;
+                } else {
+                    const copy = bCreated.get(dep);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for child layer artefact '${dep.data.label || dep.sortName}'.`);
+                    }
+                    newDeps[key] = copy;
+                }
+            }
+            const newArt = derived.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), childOfPremise.id);
+            bCreated.set(a, newArt);
+        }
+
+        const childEqualities = rule.getArtefacts()
+            .filter(a => a.layerId === childOfPremise.id && a.sortName === "Equality");
+        for (const eq of childEqualities) {
+            const resolvedChildren: Artefact[] = [];
+            for (const child of artefactChildren(eq)) {
+                if (child.layerId === ruleRoot.id) {
+                    const img = match.get(child);
+                    const copy = img ? origToCopy.get(img) : undefined;
+                    if (!img || !copy) {
+                        throw new Error(`Consistency Check Failed: No copy found for matched rule equality child '${child.data.label || child.sortName}'.`);
+                    }
+                    resolvedChildren.push(copy);
+                } else if (child.layerId === premise.id) {
+                    const copy = aCreated.get(child);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for premise equality child '${child.data.label || child.sortName}'.`);
+                    }
+                    resolvedChildren.push(copy);
+                } else {
+                    const copy = bCreated.get(child);
+                    if (!copy) {
+                        throw new Error(`Consistency Check Failed: No copy created for child layer equality child '${child.data.label || child.sortName}'.`);
+                    }
+                    resolvedChildren.push(copy);
+                }
+            }
+            const uniqueChildren = Array.from(new Set(resolvedChildren));
+            if (uniqueChildren.length >= 2) {
+                derived.addEqualityArtefactUnchecked(uniqueChildren, childOfPremise.id, JSON.parse(JSON.stringify(eq.data)));
+            }
+        }
+
+        derived.setIsRule(true);
+
+        derivedRules.push({ name: premise.name, drawing: derived });
+    }
+
+    return { hostArtefacts, derivedRules };
 }
