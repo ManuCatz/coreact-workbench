@@ -1314,14 +1314,33 @@ export class DrawingStore {
         return JSON.stringify(savedDrawing, null, 2);
     }
 
-    public importDrawingJSON(jsonString: string): SavedDrawing {
+    public exportDrawingsJSON(names?: string[]): string {
+        let drawings: SavedDrawing[];
+        if (names) {
+            drawings = names.map(name => {
+                const savedDrawing = this.drawings.get(name);
+                if (!savedDrawing) {
+                    throw new Error(`Consistency Check Failed: Drawing '${name}' does not exist.`);
+                }
+                return savedDrawing;
+            });
+        } else {
+            drawings = this.getAllDrawings();
+        }
+        return JSON.stringify({ drawings }, null, 2);
+    }
+
+    private static parseImportJSON(jsonString: string): any {
         let parsed: any;
         try {
             parsed = JSON.parse(jsonString);
         } catch (err) {
             throw new Error(`Consistency Check Failed: Invalid JSON format: ${(err as Error).message}`);
         }
+        return parsed;
+    }
 
+    private static validateAndBuildDrawing(parsed: any): SavedDrawing {
         if (!parsed || typeof parsed !== "object") {
             throw new Error("Consistency Check Failed: Invalid JSON structure for drawing.");
         }
@@ -1366,16 +1385,61 @@ export class DrawingStore {
             }
         }
 
-        const savedDrawing: SavedDrawing = {
+        return {
             name: trimmedName,
             layers: parsed.layers,
             artefacts: parsed.artefacts,
             isRule: markedAsRule,
             isFirstOrder: markedAsRule && DrawingStore.firstOrderFromLayers(parsed.layers)
         };
+    }
 
-        this.drawings.set(trimmedName, savedDrawing);
-        return savedDrawing;
+    private uniqueName(requestedName: string): string {
+        if (!this.drawings.has(requestedName)) {
+            return requestedName;
+        }
+        let i = 1;
+        while (this.drawings.has(`${requestedName} (${i})`)) {
+            i++;
+        }
+        return `${requestedName} (${i})`;
+    }
+
+    private storeImportedDrawing(parsed: any): { drawing: SavedDrawing; requestedName: string; renamed: boolean } {
+        const built = DrawingStore.validateAndBuildDrawing(parsed);
+        const requestedName = built.name;
+        const actualName = this.uniqueName(requestedName);
+        const renamed = actualName !== requestedName;
+        built.name = actualName;
+        this.drawings.set(actualName, built);
+        return { drawing: built, requestedName, renamed };
+    }
+
+    public importDrawingJSON(jsonString: string): SavedDrawing {
+        return this.storeImportedDrawing(DrawingStore.parseImportJSON(jsonString)).drawing;
+    }
+
+    public importDrawingsJSON(jsonString: string): { drawings: SavedDrawing[]; renames: Array<{ requested: string; actual: string }> } {
+        const parsed = DrawingStore.parseImportJSON(jsonString);
+
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.drawings)) {
+            const drawings: SavedDrawing[] = [];
+            const renames: Array<{ requested: string; actual: string }> = [];
+            for (const item of parsed.drawings) {
+                const result = this.storeImportedDrawing(item);
+                drawings.push(result.drawing);
+                if (result.renamed) {
+                    renames.push({ requested: result.requestedName, actual: result.drawing.name });
+                }
+            }
+            return { drawings, renames };
+        }
+
+        const result = this.storeImportedDrawing(parsed);
+        return {
+            drawings: [result.drawing],
+            renames: result.renamed ? [{ requested: result.requestedName, actual: result.drawing.name }] : []
+        };
     }
 
     public getDrawing(name: string): SavedDrawing | undefined {

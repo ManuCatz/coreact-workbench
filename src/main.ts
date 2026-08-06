@@ -1396,6 +1396,11 @@ function renderDrawingsStore(): void {
     if (!container) return;
     container.innerHTML = "";
 
+    const exportSelectAll = document.getElementById("export-select-all") as HTMLInputElement | null;
+    if (exportSelectAll) {
+        exportSelectAll.checked = false;
+    }
+
     const drawings = drawingStore.getAllDrawings();
 
     if (drawings.length === 0) {
@@ -1425,6 +1430,18 @@ function renderDrawingsStore(): void {
         const actionsDiv = document.createElement("div");
         actionsDiv.className = "drawing-row-actions";
 
+        const exportCheckbox = document.createElement("input");
+        exportCheckbox.type = "checkbox";
+        exportCheckbox.className = "export-checkbox";
+        exportCheckbox.dataset.drawingName = savedDrawing.name;
+        exportCheckbox.title = `Include '${savedDrawing.name}' in the next export`;
+        exportCheckbox.addEventListener("change", () => {
+            if (exportSelectAll) {
+                const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>(".export-checkbox"));
+                exportSelectAll.checked = checkboxes.length > 0 && checkboxes.every(cb => cb.checked);
+            }
+        });
+        headerDiv.appendChild(exportCheckbox);
         headerDiv.appendChild(titleSpan);
 
         if (isActive) {
@@ -1474,27 +1491,6 @@ function renderDrawingsStore(): void {
             }
         });
 
-        const exportBtn = document.createElement("button");
-        exportBtn.className = "layer-btn";
-        exportBtn.textContent = "Export";
-        exportBtn.title = `Export drawing '${savedDrawing.name}' to JSON file`;
-        exportBtn.addEventListener("click", () => {
-            try {
-                const jsonStr = drawingStore.exportDrawingJSON(savedDrawing.name);
-                const blob = new Blob([jsonStr], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${savedDrawing.name.replace(/[^a-z0-9_-]/gi, '_')}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            } catch (err) {
-                alert(`Error exporting drawing:\n${(err as Error).message}`);
-            }
-        });
-
         const ruleToggleBtn = document.createElement("button");
         ruleToggleBtn.className = "layer-btn";
         if (savedDrawing.isRule) {
@@ -1533,7 +1529,6 @@ function renderDrawingsStore(): void {
         });
 
         actionsDiv.appendChild(loadBtn);
-        actionsDiv.appendChild(exportBtn);
         actionsDiv.appendChild(ruleToggleBtn);
         actionsDiv.appendChild(deleteBtn);
         rowDiv.appendChild(headerDiv);
@@ -1830,20 +1825,12 @@ if (importDrawingBtn && drawingJsonUpload) {
             if (!jsonText) return;
 
             try {
-                const imported = drawingStore.importDrawingJSON(jsonText);
-                if (confirm(`Imported drawing '${imported.name}'. Would you like to load it onto the canvas now?`)) {
-                    drawingStore.loadDrawing(imported.name, drawing);
-                    activeDrawingName = imported.name;
-                    layerProvability.clear();
-                    inspectedArtefact = null;
-                    draftArtefact = null;
-                    dependencyPickingFor = null;
-                    stopPositionPicker();
-                    updateCanvas();
-                    renderLayersTree();
-                    renderMenu();
-                    renderInspector();
+                const { drawings, renames } = drawingStore.importDrawingsJSON(jsonText);
+                let summary = `Imported ${drawings.length} drawing(s): ${drawings.map(d => `'${d.name}'`).join(", ")}.`;
+                if (renames.length > 0) {
+                    summary += `\nRenamed on collision: ${renames.map(r => `'${r.requested}' -> '${r.actual}'`).join(", ")}.`;
                 }
+                alert(summary);
                 renderDrawingsStore();
             } catch (err) {
                 alert(`Error importing drawing:\n${(err as Error).message}`);
@@ -1851,6 +1838,72 @@ if (importDrawingBtn && drawingJsonUpload) {
         };
 
         reader.readAsText(file);
+    });
+}
+
+// Export Drawings Button Listener
+const exportDrawingsBtn = document.getElementById("export-drawings-btn");
+const exportSelectAll = document.getElementById("export-select-all") as HTMLInputElement | null;
+
+function getSelectedDrawingNames(): string[] {
+    return Array.from(document.querySelectorAll<HTMLInputElement>(".export-checkbox"))
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.drawingName)
+        .filter((name): name is string => !!name);
+}
+
+if (exportSelectAll) {
+    exportSelectAll.addEventListener("change", (e) => {
+        const checked = (e.target as HTMLInputElement).checked;
+        document.querySelectorAll<HTMLInputElement>(".export-checkbox").forEach(cb => cb.checked = checked);
+    });
+}
+
+if (exportDrawingsBtn) {
+    exportDrawingsBtn.addEventListener("click", () => {
+        const selectedNames = getSelectedDrawingNames();
+
+        if (selectedNames.length === 0) {
+            alert("Select at least one drawing to export.");
+            return;
+        }
+        try {
+            const jsonStr = drawingStore.exportDrawingsJSON(selectedNames);
+            const blob = new Blob([jsonStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "drawings.json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(`Error exporting drawings:\n${(err as Error).message}`);
+        }
+    });
+}
+
+// Delete Drawings Button Listener
+const deleteDrawingsBtn = document.getElementById("delete-drawings-btn");
+if (deleteDrawingsBtn) {
+    deleteDrawingsBtn.addEventListener("click", () => {
+        const selectedNames = getSelectedDrawingNames();
+        if (selectedNames.length === 0) {
+            alert("Select at least one drawing to delete.");
+            return;
+        }
+        if (!confirm(`Are you sure you want to delete ${selectedNames.length} drawing(s): ${selectedNames.map(n => `'${n}'`).join(", ")}?`)) {
+            return;
+        }
+        for (const name of selectedNames) {
+            if (name === activeDrawingName) {
+                activeDrawingName = null;
+            }
+            drawingStore.deleteDrawing(name);
+        }
+        updateActiveDrawingBanner();
+        renderDrawingsStore();
     });
 }
 
