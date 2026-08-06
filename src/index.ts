@@ -110,13 +110,17 @@ export class Artefact {
         return layers;
     }
 
-    getResolvedData(): any {
+    getResolvedData(isLayerVisible?: (layerId: string) => boolean): any {
         const result = { ...this.data };
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
             if (typeof depArtefact === "boolean") {
-                result[key] = depArtefact; // Just copy flags directly
+                if (depArtefact === true && isLayerVisible) {
+                    result[key] = isLayerVisible(this.getFlagLayer(key));
+                } else {
+                    result[key] = depArtefact;
+                }
             } else {
-                result[key] = depArtefact.getResolvedData();
+                result[key] = depArtefact.getResolvedData(isLayerVisible);
             }
         }
         return result;
@@ -135,8 +139,8 @@ export class Artefact {
         return result;
     }
 
-    draw(context: any): void {
-        this.svgElement = this.drawFunction(this.getResolvedData(), context);
+    draw(context: any, isLayerVisible?: (layerId: string) => boolean): void {
+        this.svgElement = this.drawFunction(this.getResolvedData(isLayerVisible), context);
     }
 }
 
@@ -878,8 +882,9 @@ export class Drawing {
 
         // Draw artefacts belonging to this layer
         const layerArtefacts = this.artefacts.filter(a => a.layerId === layer.id);
+        const isLayerVisible = (layerId: string) => this.isLayerVisible(layerId);
         for (const artefact of layerArtefacts) {
-            artefact.draw(layerGroup);
+            artefact.draw(layerGroup, isLayerVisible);
             if (this.focusedLayerId !== null) {
                 const focused = this.isFocused(artefact);
                 if (artefact.svgElement && artefact.svgElement.attr) {
