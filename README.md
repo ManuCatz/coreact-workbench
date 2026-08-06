@@ -69,4 +69,21 @@ When instantiating the artefact, the flag is passed alongside the actual depende
 drawing.newArtefact("Edge", {source: v0, target: v1, mono: true}, {width: 1, label: "e0"});
 ```
 
+### Flags can leave from a selectable layer
+
+A flag may be assigned to leave from any layer that is the artefact's layer or a descendant of it (mirroring the Layer Hierarchy Rule). Pass `{ __flag: true, layerId }` instead of a plain boolean:
+```javascript
+// mono leaves from layer-2, a descendant of the artefact's layer (layer-1)
+drawing.newArtefact("Edge", {source: v1, target: v2, mono: { __flag: true, layerId: "layer-2" }}, {width: 2, label: "e1"}, "layer-1");
+```
+
+`mono: true` is equivalent to `mono: { __flag: true, layerId: <artefact's layer> }`. Passing a layer that does not exist, or that is not the artefact's layer or a descendant of it, throws a `Consistency Check Failed` error.
+
+The flag's layer affects:
+- **Rule matching**: a pattern flag matches a host flag when the relative depth between the flag layer and the artefact's layer is equal in both drawings.
+- **Layer focus styling**: artefacts whose flag leaves from the focused layer are not dimmed.
+- **Tag-group filtering**: the tree view shows a tag group under the focused layer when any matching artefact's flag leaves from it.
+
+Draw functions still receive only the boolean value for flags (via `getResolvedData()`), never the layer.
+
 I want rocq export feature for first-order rules. As an example, consider a rule named Comp whose root layer consists of two composable arrows f : a -> b and g : b -> c, and the child layer consists of one arrow h : a -> c together with a triangle artefact named T. The rocq export should yield: Comp : forall (a : Vertex)(b : Vertex)(c : Vertex)(f : Edge {| source := a, target := b |}) (g : Edge {| source := b, target := c |}), {|h : Edge {| source := a, target := c |}

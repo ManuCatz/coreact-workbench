@@ -80,8 +80,13 @@ export class SortStore {
     }
 }
 
+export type FlagRef = { __flag: true; layerId: string };
+
+export type ArtefactDependency = Artefact | boolean | FlagRef;
+
 export class Artefact {
     public svgElement: any = null; // Store the rendered SVG node
+    public flagLayers: Record<string, string> = {};
 
     constructor(
         public sortName: string,
@@ -90,6 +95,20 @@ export class Artefact {
         protected drawFunction: (data: any, context: any) => any,
         public layerId: string = "root"
     ) {}
+
+    getFlagLayer(flagKey: string): string {
+        return this.flagLayers[flagKey] ?? this.layerId;
+    }
+
+    getEffectiveFlagLayers(): Set<string> {
+        const layers = new Set<string>();
+        for (const [key, val] of Object.entries(this.dependencies)) {
+            if (val === true) {
+                layers.add(this.getFlagLayer(key));
+            }
+        }
+        return layers;
+    }
 
     getResolvedData(): any {
         const result = { ...this.data };
@@ -361,6 +380,19 @@ export class Drawing {
         return ancestors;
     }
 
+    public getLayerDepth(layerId: string): number {
+        let depth = 0;
+        let current: string | null = layerId;
+        const visited = new Set<string>();
+        while (current && this.layers.has(current) && !visited.has(current)) {
+            visited.add(current);
+            depth++;
+            const layer: Layer = this.layers.get(current)!;
+            current = layer.parentId;
+        }
+        return depth;
+    }
+
     public getDescendants(layerId: string): Set<string> {
         const descendants = new Set<string>();
         descendants.add(layerId);
@@ -389,6 +421,15 @@ export class Drawing {
         // Remove the layers
         for (const id of descendants) {
             this.layers.delete(id);
+        }
+
+        // Reset any surviving flag whose layer was deleted to the artefact's own layer
+        for (const art of this.artefacts) {
+            for (const [flagKey, flagLayer] of Object.entries(art.flagLayers)) {
+                if (descendants.has(flagLayer)) {
+                    delete art.flagLayers[flagKey];
+                }
+            }
         }
 
         if (this.focusedLayerId && descendants.has(this.focusedLayerId)) {
@@ -431,6 +472,13 @@ export class Drawing {
                         throw new Error(`Consistency Check Failed: Artefact '${otherArt.data.label || otherArt.sortName}' (in layer '${otherLayerName}') depends on this artefact, but layer '${targetLayerName}' is not in its lower ancestor layers.`);
                     }
                 }
+            }
+        }
+
+        // Check flags: a set flag must leave from the new layer or one of its descendants
+        for (const [flagKey, flagValue] of Object.entries(artefact.dependencies)) {
+            if (flagValue === true) {
+                this.validateFlagLayer(artefact.getFlagLayer(flagKey), targetLayerId, flagKey);
             }
         }
 
@@ -587,7 +635,7 @@ export class Drawing {
                 const otherDep = otherArt.dependencies[depKey];
 
                 if (depSortName === "flag") {
-                    if (firstDep !== otherDep) {
+                    if (!this.flagsMatch(firstArt, otherArt, depKey)) {
                         throw new Error(`Consistency Check Failed: Flag dependency '${depKey}' differs between artefacts in equality artefact.`);
                     }
                 } else {
@@ -684,7 +732,7 @@ export class Drawing {
 
     newArtefact(
         sortName: string,
-        dependencies: Record<string, Artefact | boolean>,
+        dependencies: Record<string, ArtefactDependency>,
         data: Record<string, any>,
         layerId?: string
     ): Artefact {
@@ -694,7 +742,7 @@ export class Drawing {
                 children.push(...data.children);
             } else {
                 for (const val of Object.values(dependencies)) {
-                    if (val && typeof val !== "boolean") {
+                    if (val && typeof val !== "boolean" && !this.isFlagRef(val)) {
                         children.push(val);
                     }
                 }
@@ -719,11 +767,11 @@ export class Drawing {
             const providedValue = dependencies[depKey];
             
             if (expectedSortName === "flag") {
-                if (providedValue !== undefined && typeof providedValue !== "boolean") {
-                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected flag (boolean), but got '${typeof providedValue}'.`);
+                if (providedValue !== undefined && typeof providedValue !== "boolean" && !this.isFlagRef(providedValue)) {
+                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected flag (boolean or { layerId }), but got '${typeof providedValue}'.`);
                 }
             } else {
-                if (!providedValue || typeof providedValue === "boolean") {
+                if (!providedValue || typeof providedValue === "boolean" || this.isFlagRef(providedValue)) {
                     throw new Error(`Consistency Check Failed: Missing dependency '${depKey}' for artefact of sort '${sortName}'.`);
                 }
                 if (providedValue.sortName !== expectedSortName) {
@@ -773,10 +821,40 @@ export class Drawing {
             }
         }
 
-        const artefact = new Artefact(sortName, dependencies, data, sortDef.drawFunction, targetLayerId);
+        // 3. Normalize flag references ({ layerId }) into booleans + flagLayers entries
+        const normalizedDeps: Record<string, Artefact | boolean> = {};
+        const flagLayers: Record<string, string> = {};
+        for (const [depKey, providedValue] of Object.entries(dependencies)) {
+            const expectedSortName = sortDef.dependencies[depKey];
+            if (expectedSortName === "flag" && this.isFlagRef(providedValue)) {
+                this.validateFlagLayer(providedValue.layerId, targetLayerId, depKey);
+                normalizedDeps[depKey] = true;
+                flagLayers[depKey] = providedValue.layerId;
+            } else {
+                normalizedDeps[depKey] = providedValue as Artefact | boolean;
+            }
+        }
+
+        const artefact = new Artefact(sortName, normalizedDeps, data, sortDef.drawFunction, targetLayerId);
+        artefact.flagLayers = flagLayers;
         this.artefacts.push(artefact);
         
         return artefact;
+    }
+
+    private isFlagRef(value: any): value is FlagRef {
+        return typeof value === "object" && value !== null && (value as FlagRef).__flag === true && typeof value.layerId === "string";
+    }
+
+    private validateFlagLayer(flagLayerId: string, artefactLayerId: string, flagKey: string): void {
+        if (!this.layers.has(flagLayerId)) {
+            throw new Error(`Consistency Check Failed: Flag '${flagKey}' leaves from layer '${flagLayerId}', which does not exist.`);
+        }
+        if (!this.getDescendants(artefactLayerId).has(flagLayerId)) {
+            const artefactLayerName = this.layers.get(artefactLayerId)?.name || artefactLayerId;
+            const flagLayerName = this.layers.get(flagLayerId)?.name || flagLayerId;
+            throw new Error(`Consistency Check Failed: Flag '${flagKey}' leaves from layer '${flagLayerName}', which is not '${artefactLayerName}' or any of its descendant layers.`);
+        }
     }
 
     draw(context: any): void {
@@ -798,19 +876,17 @@ export class Drawing {
                 layerGroup.attr("display", "none");
             }
 
-            // Set Opacity based on Focus
+        // Draw artefacts belonging to this layer
+        const layerArtefacts = this.artefacts.filter(a => a.layerId === layer.id);
+        for (const artefact of layerArtefacts) {
+            artefact.draw(layerGroup);
             if (this.focusedLayerId !== null) {
-                const opacity = (layer.id === this.focusedLayerId) ? 1.0 : 0.5;
-                layerGroup.attr("opacity", opacity);
-            } else {
-                layerGroup.attr("opacity", 1.0);
+                const focused = this.isFocused(artefact);
+                if (artefact.svgElement && artefact.svgElement.attr) {
+                    artefact.svgElement.attr("opacity", focused ? 1.0 : 0.5);
+                }
             }
-
-            // Draw artefacts belonging to this layer
-            const layerArtefacts = this.artefacts.filter(a => a.layerId === layer.id);
-            for (const artefact of layerArtefacts) {
-                artefact.draw(layerGroup);
-            }
+        }
 
             // Apply partial layer color if colorEnabled
             if (layer.colorEnabled && layer.color) {
@@ -862,6 +938,25 @@ export class Drawing {
         }
     }
 
+    private isFocused(artefact: Artefact): boolean {
+        if (this.focusedLayerId === null) return true;
+        if (artefact.layerId === this.focusedLayerId) return true;
+        for (const flagLayer of artefact.getEffectiveFlagLayers()) {
+            if (flagLayer === this.focusedLayerId) return true;
+        }
+        return false;
+    }
+
+    public flagsMatch(a1: Artefact, a2: Artefact, flagKey: string): boolean {
+        const dep1 = a1.dependencies[flagKey];
+        const dep2 = a2.dependencies[flagKey];
+        const set1 = dep1 === true;
+        const set2 = dep2 === true;
+        if (set1 !== set2) return false;
+        if (!set1) return true;
+        return a1.getFlagLayer(flagKey) === a2.getFlagLayer(flagKey);
+    }
+
     public areDependenciesEqual(a1: Artefact, a2: Artefact): boolean {
         if (a1.sortName !== a2.sortName) {
             return false;
@@ -879,6 +974,9 @@ export class Drawing {
                 return false;
             }
             if (a1.dependencies[k] !== a2.dependencies[k]) {
+                return false;
+            }
+            if (a1.dependencies[k] === true && !this.flagsMatch(a1, a2, k)) {
                 return false;
             }
         }
@@ -1010,6 +1108,7 @@ export interface ArtefactData {
     layerId: string;
     dependencies: Record<string, string | boolean>;
     data: Record<string, any>;
+    flagLayers?: Record<string, string>;
 }
 
 export interface SavedDrawing {
@@ -1108,7 +1207,8 @@ export class DrawingStore {
                 sortName: art.sortName,
                 layerId: art.layerId,
                 dependencies: serializedDeps,
-                data: JSON.parse(JSON.stringify(art.data))
+                data: JSON.parse(JSON.stringify(art.data)),
+                flagLayers: Object.keys(art.flagLayers).length > 0 ? { ...art.flagLayers } : undefined
             };
         });
 
@@ -1163,7 +1263,7 @@ export class DrawingStore {
                 const artData = remainingArtefacts[i];
 
                 let ready = true;
-                const resolvedDeps: Record<string, Artefact | boolean> = {};
+                const resolvedDeps: Record<string, Artefact | boolean | FlagRef> = {};
 
                 for (const [depKey, depVal] of Object.entries(artData.dependencies)) {
                     if (typeof depVal === "boolean") {
@@ -1179,6 +1279,11 @@ export class DrawingStore {
                 }
 
                 if (ready) {
+                    for (const [flagKey, flagLayer] of Object.entries(artData.flagLayers ?? {})) {
+                        if (resolvedDeps[flagKey] === true) {
+                            resolvedDeps[flagKey] = { __flag: true, layerId: flagLayer };
+                        }
+                    }
                     const newArt = drawing.newArtefact(
                         artData.sortName,
                         resolvedDeps,
@@ -1247,6 +1352,9 @@ export class DrawingStore {
             if (!art || typeof art.id !== "string" || typeof art.sortName !== "string" || typeof art.layerId !== "string" || !art.dependencies || typeof art.dependencies !== "object" || !art.data || typeof art.data !== "object") {
                 throw new Error("Consistency Check Failed: Invalid artefact structure in imported drawing.");
             }
+            if (art.flagLayers !== undefined && (typeof art.flagLayers !== "object" || art.flagLayers === null || Array.isArray(art.flagLayers))) {
+                throw new Error("Consistency Check Failed: Invalid flagLayers structure in imported drawing.");
+            }
         }
 
         const markedAsRule = !!parsed.isRule;
@@ -1309,7 +1417,8 @@ function extractEqualityConstraints(rule: Drawing): Array<{ children: Artefact[]
 function findRuleApplicationsInternal(
     host: Drawing,
     patternArts: Artefact[],
-    equalityConstraints: Array<{ children: Artefact[] }>
+    equalityConstraints: Array<{ children: Artefact[] }>,
+    rule: Drawing
 ): RuleApplication[] {
     const results: RuleApplication[] = [];
 
@@ -1385,9 +1494,21 @@ function findRuleApplicationsInternal(
             let ok = true;
             for (const [k, dep] of Object.entries(a.dependencies)) {
                 if (typeof dep === "boolean") {
-                    if (dep === true && cand.dependencies[k] !== true) {
-                        ok = false;
-                        break;
+                    if (dep === true) {
+                        if (cand.dependencies[k] !== true) {
+                            ok = false;
+                            break;
+                        }
+                        // Flag leaves from a layer: require the same relative depth
+                        // between the flag's layer and the artefact's layer.
+                        const patternFlagLayer = a.getFlagLayer(k);
+                        const hostFlagLayer = cand.getFlagLayer(k);
+                        const patternRelative = rule.getLayerDepth(patternFlagLayer) - rule.getLayerDepth(a.layerId);
+                        const hostRelative = host.getLayerDepth(hostFlagLayer) - host.getLayerDepth(cand.layerId);
+                        if (patternRelative !== hostRelative) {
+                            ok = false;
+                            break;
+                        }
                     }
                 } else if (patternSet.has(dep)) {
                     const img = assignment.get(dep);
@@ -1459,14 +1580,14 @@ function findRootRuleApplications(rule: Drawing, host: Drawing): RuleApplication
     }
     const root = rootLayers[0];
     const rootArts = rule.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === root.id);
-    return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule));
+    return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule), rule);
 }
 
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
     validateRuleDrawing(rule);
 
     const patternArts = rule.getArtefacts().filter(a => a.sortName !== "Equality");
-    return findRuleApplicationsInternal(host, patternArts, extractEqualityConstraints(rule));
+    return findRuleApplicationsInternal(host, patternArts, extractEqualityConstraints(rule), rule);
 }
 
 export function findFirstOrderRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
@@ -1530,6 +1651,15 @@ function artefactChildren(art: Artefact): Artefact[] {
     return art instanceof EqualityArtefact
         ? art.children
         : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+}
+
+function remapFlagLayers(source: Artefact, target: Artefact, targetDrawing: Drawing, layerMap: Record<string, string>): void {
+    for (const [flagKey, flagLayer] of Object.entries(source.flagLayers)) {
+        const mapped = layerMap[flagLayer] ?? flagLayer;
+        if (targetDrawing.getLayer(mapped) && targetDrawing.getDescendants(target.layerId).has(mapped)) {
+            target.flagLayers[flagKey] = mapped;
+        }
+    }
 }
 
 function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): Artefact[] {
@@ -1599,6 +1729,10 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
         }
 
         const newArt = host.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), hostRootId);
+        const layerMap: Record<string, string> = {};
+        layerMap[ruleRoot.id] = hostRootId;
+        layerMap[childLayer.id] = hostRootId;
+        remapFlagLayers(a, newArt, host, layerMap);
         created.set(a, newArt);
         result.push(newArt);
     }
@@ -1751,6 +1885,9 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 }
             }
             const copy = derived.newArtefact(a.sortName, copiedDeps, JSON.parse(JSON.stringify(a.data)), derivedRootId);
+            const copyLayerMap: Record<string, string> = {};
+            copyLayerMap[hostRootId] = derivedRootId;
+            remapFlagLayers(a, copy, derived, copyLayerMap);
             origToCopy.set(a, copy);
         }
 
@@ -1812,6 +1949,10 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 }
             }
             const newArt = derived.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), derivedRootId);
+            const premiseLayerMap: Record<string, string> = {};
+            premiseLayerMap[ruleRoot.id] = derivedRootId;
+            premiseLayerMap[premise.id] = derivedRootId;
+            remapFlagLayers(a, newArt, derived, premiseLayerMap);
             aCreated.set(a, newArt);
         }
 
@@ -1905,6 +2046,10 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 }
             }
             const newArt = derived.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), childOfPremise.id);
+            const bLayerMap: Record<string, string> = {};
+            bLayerMap[ruleRoot.id] = derivedRootId;
+            bLayerMap[premise.id] = derivedRootId;
+            remapFlagLayers(a, newArt, derived, bLayerMap);
             bCreated.set(a, newArt);
         }
 

@@ -38,7 +38,8 @@ const v2 = drawing.newArtefact("Vertex", {}, { position: [400, 150], label: "v2"
 const e0 = drawing.newArtefact("Edge", { source: v0, target: v1 }, { width: 4, bend: 0, label: "e0" }, "root");
 
 // Edges e1, e2 in Child Layer 1 (referencing Root Layer vertices v0, v1, v2)
-const e1 = drawing.newArtefact("Edge", { source: v1, target: v2, mono: true }, { width: 2, bend: 30, label: "e1" }, "layer-1");
+// e1's mono flag leaves from layer-2 (a descendant of e1's layer), so it shows as active when layer-2 is focused
+const e1 = drawing.newArtefact("Edge", { source: v1, target: v2, mono: { __flag: true, layerId: "layer-2" } }, { width: 2, bend: 30, label: "e1" }, "layer-1");
 const e2 = drawing.newArtefact("Edge", { source: v2, target: v0 }, { width: 2, bend: 0, label: "e2" }, "layer-1");
 console.log("Created demo edges e0, e1, e2:", e0.data.label, e1.data.label, e2.data.label);
 
@@ -87,6 +88,27 @@ function getSinglePositionAttr(sortDef: SortDefinition): string | null {
         .filter(([_, type]) => type === "position")
         .map(([name]) => name);
     return positionAttrs.length === 1 ? positionAttrs[0] : null;
+}
+
+function appendFlagLayerSelect(container: HTMLElement, flagKey: string, artefactLayerId: string, currentFlagLayerId: string, onLayerChange: (layerId: string) => void): HTMLSelectElement {
+    const select = document.createElement("select");
+    select.className = "flag-layer-select";
+    select.title = `Layer from which flag '${flagKey}' leaves`;
+    const candidates = new Set([artefactLayerId, ...drawing.getDescendants(artefactLayerId)]);
+    for (const l of drawing.getAllLayers()) {
+        if (candidates.has(l.id)) {
+            const opt = document.createElement("option");
+            opt.value = l.id;
+            opt.textContent = l.name;
+            if (l.id === currentFlagLayerId) opt.selected = true;
+            select.appendChild(opt);
+        }
+    }
+    select.addEventListener("change", (e) => {
+        onLayerChange((e.target as HTMLSelectElement).value);
+    });
+    container.appendChild(select);
+    return select;
 }
 
 function clearActivePickerButton(): void {
@@ -158,6 +180,18 @@ try {
     drawing.newArtefact("Edge", { source: v0, target: v1, mono: "yes" as any }, { width: 4, bend: 0 });
 } catch (e) {
     console.error("Caught expected error for bad flag type:", (e as Error).message);
+}
+
+try {
+    drawing.newArtefact("Edge", { source: v0, target: v1, mono: { __flag: true, layerId: "root" } }, { width: 4, bend: 0 });
+} catch (e) {
+    console.error("Caught expected error for flag leaving from non-descendant layer:", (e as Error).message);
+}
+
+try {
+    drawing.newArtefact("Edge", { source: v0, target: v1, mono: { __flag: true, layerId: "does-not-exist" } }, { width: 4, bend: 0 });
+} catch (e) {
+    console.error("Caught expected error for flag leaving from nonexistent layer:", (e as Error).message);
 }
 
 // Hierarchy Check: Try creating an edge in "root" layer whose target vertex is in "layer-1"
@@ -256,10 +290,7 @@ drawing.addLayer("leaf-layer", "Leaf Layer", "root", "#f39c12", true);
 const check2 = drawingStore.checkIsRule(drawing);
 console.log("Rule check after adding leaf layer (isRule expected true):", check2.isRule);
 
-// Explicitly mark the drawing as a rule before saving
-drawing.setIsRule(true);
-
-// Save drawing as a rule-compliant drawing
+// Save drawing as a regular (non-rule) drawing
 const savedRuleDrawing = drawingStore.saveDrawing("Rule Drawing Demo", drawing);
 console.log("Saved 'Rule Drawing Demo', isRule =", savedRuleDrawing.isRule);
 
@@ -485,6 +516,7 @@ let draftArtefact: {
     dependencies: Record<string, Artefact | boolean>;
     data: Record<string, any>;
     layerId: string;
+    flagLayers: Record<string, string>;
 } | null = null;
 
 let dependencyPickingFor: string | null = null;
@@ -620,6 +652,7 @@ function updateCanvas(): void {
                         sortDef.drawFunction,
                         draftArtefact.layerId
                     );
+                    tempArt.flagLayers = { ...draftArtefact.flagLayers };
                     tempArt.draw(svgContext);
                     if (tempArt.svgElement) {
                         tempArt.svgElement.attr("opacity", 0.7);
@@ -945,7 +978,12 @@ function renderMenu(): void {
         
         const activeFlags = Object.entries(artefact.dependencies)
             .filter(([_, val]) => val === true)
-            .map(([key, _]) => key);
+            .map(([key]) => {
+                const flagLayerId = artefact.getFlagLayer(key);
+                if (flagLayerId === artefact.layerId) return key;
+                const flagLayer = drawing.getLayer(flagLayerId);
+                return `${key}@${flagLayer ? flagLayer.name : flagLayerId}`;
+            });
             
         if (activeFlags.length > 0) {
             artefactLabel += ` (${activeFlags.join(", ")})`;
@@ -1213,7 +1251,8 @@ function renderMenu(): void {
                 sortName: sortDef.name,
                 dependencies: {},
                 data: initialData,
-                layerId: defaultLayerId
+                layerId: defaultLayerId,
+                flagLayers: {}
             };
             dependencyPickingFor = null;
 
@@ -1222,7 +1261,7 @@ function renderMenu(): void {
             const singlePositionAttr = getSinglePositionAttr(sortDef);
             if (singlePositionAttr) {
                 activePositionPicker = {
-                    artefact: { data: draftArtefact.data } as Artefact,
+                    artefact: { data: draftArtefact!.data } as Artefact,
                     attrName: singlePositionAttr,
                     inputX: null,
                     inputY: null,
@@ -1259,7 +1298,7 @@ function renderMenu(): void {
 
     for (const [tagName, artefacts] of Object.entries(tagGroups)) {
         const topLevelTagArtefacts = focusedId 
-            ? artefacts.filter(art => art.layerId === focusedId) 
+            ? artefacts.filter(art => art.layerId === focusedId || art.getEffectiveFlagLayers().has(focusedId))
             : artefacts;
 
         if (topLevelTagArtefacts.length === 0 && focusedId) {
@@ -2052,6 +2091,12 @@ function renderInspector() {
         }
         layerSelect.addEventListener("change", (e) => {
             draftArtefact!.layerId = (e.target as HTMLSelectElement).value;
+            const descendants = drawing.getDescendants(draftArtefact!.layerId);
+            for (const [flagKey, flagLayerId] of Object.entries(draftArtefact!.flagLayers)) {
+                if (!descendants.has(flagLayerId)) {
+                    delete draftArtefact!.flagLayers[flagKey];
+                }
+            }
             triggerDraftUpdate();
         });
         layerGroup.appendChild(layerSelect);
@@ -2279,7 +2324,7 @@ function renderInspector() {
 
             for (const [flagKey, _] of flagDeps) {
                 const group = document.createElement("div");
-                group.className = "form-group checkbox";
+                group.className = "form-group checkbox flag-row";
 
                 const input = document.createElement("input");
                 input.type = "checkbox";
@@ -2288,11 +2333,30 @@ function renderInspector() {
                 const label = document.createElement("label");
                 label.textContent = flagKey;
 
+                const flagLayerSelect = appendFlagLayerSelect(
+                    group,
+                    flagKey,
+                    draftArtefact.layerId,
+                    draftArtefact.flagLayers[flagKey] ?? draftArtefact.layerId,
+                    (layerId) => {
+                        if (layerId === draftArtefact!.layerId) {
+                            delete draftArtefact!.flagLayers[flagKey];
+                        } else {
+                            draftArtefact!.flagLayers[flagKey] = layerId;
+                        }
+                        triggerDraftUpdate();
+                    }
+                );
+                flagLayerSelect.style.display = input.checked ? "" : "none";
+
                 input.addEventListener("change", (e) => {
                     if ((e.target as HTMLInputElement).checked) {
                         draftArtefact!.dependencies[flagKey] = true;
+                        flagLayerSelect.style.display = "";
                     } else {
                         delete draftArtefact!.dependencies[flagKey];
+                        delete draftArtefact!.flagLayers[flagKey];
+                        flagLayerSelect.style.display = "none";
                     }
                     triggerDraftUpdate();
                 });
@@ -2348,9 +2412,15 @@ function renderInspector() {
         validateBtn.addEventListener("click", () => {
             if (isValid) {
                 try {
+                    const finalDeps: Record<string, Artefact | boolean | { __flag: true; layerId: string }> = { ...draftArtefact!.dependencies };
+                    for (const [flagKey, flagLayerId] of Object.entries(draftArtefact!.flagLayers)) {
+                        if (finalDeps[flagKey] === true) {
+                            finalDeps[flagKey] = { __flag: true, layerId: flagLayerId };
+                        }
+                    }
                     drawing.newArtefact(
                         draftArtefact!.sortName,
-                        draftArtefact!.dependencies,
+                        finalDeps,
                         draftArtefact!.data,
                         draftArtefact!.layerId
                     );
@@ -2583,7 +2653,7 @@ function renderInspector() {
 
         for (const [flagKey, _] of flagDependencies) {
             const group = document.createElement("div");
-            group.className = "form-group checkbox";
+            group.className = "form-group checkbox flag-row";
             
             const input = document.createElement("input");
             input.type = "checkbox";
@@ -2591,13 +2661,36 @@ function renderInspector() {
             
             const label = document.createElement("label");
             label.textContent = flagKey;
+
+            const flagLayerSelect = appendFlagLayerSelect(
+                group,
+                flagKey,
+                inspectedArtefact.layerId,
+                inspectedArtefact.getFlagLayer(flagKey),
+                (layerId) => {
+                    try {
+                        if (layerId === inspectedArtefact!.layerId) {
+                            delete inspectedArtefact!.flagLayers[flagKey];
+                        } else {
+                            inspectedArtefact!.flagLayers[flagKey] = layerId;
+                        }
+                        triggerUpdate();
+                    } catch (err) {
+                        alert((err as Error).message);
+                    }
+                }
+            );
+            flagLayerSelect.style.display = input.checked ? "" : "none";
             
             input.addEventListener("change", (e) => {
                 const target = e.target as HTMLInputElement;
                 if (target.checked) {
                     inspectedArtefact!.dependencies[flagKey] = true as any;
+                    flagLayerSelect.style.display = "";
                 } else {
                     delete inspectedArtefact!.dependencies[flagKey];
+                    delete inspectedArtefact!.flagLayers[flagKey];
+                    flagLayerSelect.style.display = "none";
                 }
                 triggerUpdate();
             });
