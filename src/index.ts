@@ -147,13 +147,93 @@ export class EqualityArtefact extends Artefact {
     }
 }
 
+export function checkRuleStructure(layers: Array<{ id: string; name: string; parentId: string | null }>): { isRule: boolean; reason?: string } {
+    const rootLayers = layers.filter(l => l.parentId === null);
+
+    // Rule condition 1: At most one root layer
+    if (rootLayers.length > 1) {
+        return {
+            isRule: false,
+            reason: `Drawing has ${rootLayers.length} root layers (at most 1 allowed).`
+        };
+    }
+
+    // Rule condition 2: Depth at most 3
+    const getLayerDepth = (layerId: string): number => {
+        let depth = 0;
+        let current: string | null = layerId;
+        const visited = new Set<string>();
+        while (current) {
+            if (visited.has(current)) break;
+            visited.add(current);
+            depth++;
+            const layer = layers.find(l => l.id === current);
+            current = layer ? layer.parentId : null;
+        }
+        return depth;
+    };
+
+    for (const layer of layers) {
+        const depth = getLayerDepth(layer.id);
+        if (depth > 3) {
+            return {
+                isRule: false,
+                reason: `Layer '${layer.name}' exceeds maximum allowed depth of 3 (current depth: ${depth}).`
+            };
+        }
+    }
+
+    // Rule condition 3: Exactly one child of the root layer that does not have any children
+    if (rootLayers.length === 0) {
+        return {
+            isRule: false,
+            reason: "Drawing has no root layer (a rule requires exactly one child of the root layer with no children)."
+        };
+    }
+
+    const root = rootLayers[0];
+    const rootChildren = layers.filter(l => l.parentId === root.id);
+    const leafRootChildren = rootChildren.filter(child => {
+        const childrenOfChild = layers.filter(l => l.parentId === child.id);
+        return childrenOfChild.length === 0;
+    });
+
+    if (leafRootChildren.length !== 1) {
+        return {
+            isRule: false,
+            reason: `Root layer must have exactly 1 child layer without children, but found ${leafRootChildren.length}.`
+        };
+    }
+
+    return { isRule: true };
+}
+
 export class Drawing {
     private artefacts: Artefact[] = [];
     private layers: Map<string, Layer> = new Map();
     private focusedLayerId: string | null = null;
+    private ruleFlag: boolean = false;
 
     constructor(private sortStore: SortStore) {
         this.addLayer("root", "Root Layer", null, "#3498db", false);
+    }
+
+    public get isRule(): boolean {
+        return this.ruleFlag;
+    }
+
+    public setIsRule(isRule: boolean): void {
+        if (isRule) {
+            const check = this.checkRuleConditions();
+            if (!check.isRule) {
+                throw new Error(`Consistency Check Failed: Drawing cannot be marked as a rule: ${check.reason}`);
+            }
+        }
+        this.ruleFlag = isRule;
+    }
+
+    public checkRuleConditions(): { isRule: boolean; reason?: string } {
+        return checkRuleStructure(Array.from(this.layers.values()));
     }
 
     public addLayer(
@@ -844,6 +924,7 @@ export class Drawing {
         this.artefacts = [];
         this.layers.clear();
         this.focusedLayerId = null;
+        this.ruleFlag = false;
         if (keepDefaultRoot) {
             this.addLayer("root", "Root Layer", null, "#3498db", false);
         }
@@ -879,65 +960,7 @@ export class DrawingStore {
     private drawings: Map<string, SavedDrawing> = new Map();
 
     public checkIsRule(drawing: Drawing): { isRule: boolean; reason?: string } {
-        const layers = drawing.getAllLayers();
-        const rootLayers = layers.filter(l => l.parentId === null);
-
-        // Rule condition 1: At most one root layer
-        if (rootLayers.length > 1) {
-            return {
-                isRule: false,
-                reason: `Drawing has ${rootLayers.length} root layers (at most 1 allowed).`
-            };
-        }
-
-        // Rule condition 2: Depth at most 3
-        const getLayerDepth = (layerId: string): number => {
-            let depth = 0;
-            let current: string | null = layerId;
-            const visited = new Set<string>();
-            while (current) {
-                if (visited.has(current)) break;
-                visited.add(current);
-                depth++;
-                const layer = drawing.getLayer(current);
-                current = layer ? layer.parentId : null;
-            }
-            return depth;
-        };
-
-        for (const layer of layers) {
-            const depth = getLayerDepth(layer.id);
-            if (depth > 3) {
-                return {
-                    isRule: false,
-                    reason: `Layer '${layer.name}' exceeds maximum allowed depth of 3 (current depth: ${depth}).`
-                };
-            }
-        }
-
-        // Rule condition 3: Exactly one child of the root layer that does not have any children
-        if (rootLayers.length === 0) {
-            return {
-                isRule: false,
-                reason: "Drawing has no root layer (a rule requires exactly one child of the root layer with no children)."
-            };
-        }
-
-        const root = rootLayers[0];
-        const rootChildren = layers.filter(l => l.parentId === root.id);
-        const leafRootChildren = rootChildren.filter(child => {
-            const childrenOfChild = layers.filter(l => l.parentId === child.id);
-            return childrenOfChild.length === 0;
-        });
-
-        if (leafRootChildren.length !== 1) {
-            return {
-                isRule: false,
-                reason: `Root layer must have exactly 1 child layer without children, but found ${leafRootChildren.length}.`
-            };
-        }
-
-        return { isRule: true };
+        return drawing.checkRuleConditions();
     }
 
     private static firstOrderFromLayers(layers: Array<{ id: string; parentId: string | null }>): boolean {
@@ -951,10 +974,29 @@ export class DrawingStore {
     }
 
     public checkIsFirstOrder(drawing: Drawing): boolean {
+        if (!drawing.isRule) {
+            return false;
+        }
         if (!this.checkIsRule(drawing).isRule) {
             return false;
         }
         return DrawingStore.firstOrderFromLayers(drawing.getAllLayers());
+    }
+
+    public markAsRule(name: string, isRule: boolean): SavedDrawing {
+        const saved = this.drawings.get(name);
+        if (!saved) {
+            throw new Error(`Consistency Check Failed: Drawing '${name}' does not exist.`);
+        }
+        if (isRule) {
+            const check = checkRuleStructure(saved.layers);
+            if (!check.isRule) {
+                throw new Error(`Consistency Check Failed: Drawing '${name}' cannot be marked as a rule: ${check.reason}`);
+            }
+        }
+        saved.isRule = isRule;
+        saved.isFirstOrder = isRule && DrawingStore.firstOrderFromLayers(saved.layers);
+        return saved;
     }
 
     public saveDrawing(name: string, drawing: Drawing): SavedDrawing {
@@ -963,7 +1005,14 @@ export class DrawingStore {
         }
 
         const trimmedName = name.trim();
-        const ruleCheck = this.checkIsRule(drawing);
+        const markedAsRule = drawing.isRule;
+
+        if (markedAsRule) {
+            const ruleCheck = this.checkIsRule(drawing);
+            if (!ruleCheck.isRule) {
+                throw new Error(`Consistency Check Failed: Drawing '${trimmedName}' is marked as a rule but does not satisfy rule conditions: ${ruleCheck.reason}`);
+            }
+        }
 
         const artefacts = drawing.getArtefacts();
         const artefactToId = new Map<Artefact, string>();
@@ -1003,8 +1052,8 @@ export class DrawingStore {
             name: trimmedName,
             layers: layersData,
             artefacts: artefactsData,
-            isRule: ruleCheck.isRule,
-            isFirstOrder: this.checkIsFirstOrder(drawing)
+            isRule: markedAsRule,
+            isFirstOrder: markedAsRule && DrawingStore.firstOrderFromLayers(layersData)
         };
 
         this.drawings.set(trimmedName, savedDrawing);
@@ -1084,7 +1133,7 @@ export class DrawingStore {
             throw new Error(`Consistency Check Failed: Could not resolve dependencies for drawing '${name}'.`);
         }
 
-        savedDrawing.isRule = this.checkIsRule(drawing).isRule;
+        drawing.setIsRule(savedDrawing.isRule);
         savedDrawing.isFirstOrder = this.checkIsFirstOrder(drawing);
     }
 
@@ -1136,12 +1185,21 @@ export class DrawingStore {
             }
         }
 
+        const markedAsRule = !!parsed.isRule;
+
+        if (markedAsRule) {
+            const check = checkRuleStructure(parsed.layers);
+            if (!check.isRule) {
+                throw new Error(`Consistency Check Failed: Imported drawing '${trimmedName}' is marked as a rule but does not satisfy rule conditions: ${check.reason}`);
+            }
+        }
+
         const savedDrawing: SavedDrawing = {
             name: trimmedName,
             layers: parsed.layers,
             artefacts: parsed.artefacts,
-            isRule: !!parsed.isRule,
-            isFirstOrder: !!parsed.isRule && DrawingStore.firstOrderFromLayers(parsed.layers)
+            isRule: markedAsRule,
+            isFirstOrder: markedAsRule && DrawingStore.firstOrderFromLayers(parsed.layers)
         };
 
         this.drawings.set(trimmedName, savedDrawing);
@@ -1321,11 +1379,27 @@ function applicationsEquivalent(
 }
 
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+    if (!rule.isRule) {
+        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be used as a rule.");
+    }
+    const ruleStructure = rule.checkRuleConditions();
+    if (!ruleStructure.isRule) {
+        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
+    }
+
     const patternArts = rule.getArtefacts().filter(a => a.sortName !== "Equality");
     return findRuleApplicationsInternal(host, patternArts, extractEqualityConstraints(rule));
 }
 
 export function findFirstOrderRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
+    if (!rule.isRule) {
+        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be used as a rule.");
+    }
+    const ruleStructure = rule.checkRuleConditions();
+    if (!ruleStructure.isRule) {
+        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
+    }
+
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {
@@ -1342,6 +1416,14 @@ export function findFirstOrderRuleApplications(rule: Drawing, host: Drawing): Ru
 }
 
 export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): Artefact[] {
+    if (!rule.isRule) {
+        throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be applied.");
+    }
+    const ruleStructure = rule.checkRuleConditions();
+    if (!ruleStructure.isRule) {
+        throw new Error(`Consistency Check Failed: Drawing marked as a rule does not satisfy rule conditions: ${ruleStructure.reason}`);
+    }
+
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {

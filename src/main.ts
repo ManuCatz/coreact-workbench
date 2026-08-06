@@ -256,6 +256,9 @@ drawing.addLayer("leaf-layer", "Leaf Layer", "root", "#f39c12", true);
 const check2 = drawingStore.checkIsRule(drawing);
 console.log("Rule check after adding leaf layer (isRule expected true):", check2.isRule);
 
+// Explicitly mark the drawing as a rule before saving
+drawing.setIsRule(true);
+
 // Save drawing as a rule-compliant drawing
 const savedRuleDrawing = drawingStore.saveDrawing("Rule Drawing Demo", drawing);
 console.log("Saved 'Rule Drawing Demo', isRule =", savedRuleDrawing.isRule);
@@ -276,6 +279,7 @@ ruleDrawing.newArtefact("Edge", { source: rv0, target: rv1 }, { width: 2, bend: 
 ruleDrawing.newArtefact("Edge", { source: rv1, target: rv2 }, { width: 2, bend: 0, label: "re2" }, "root");
 ruleDrawing.addLayer("rule-pattern", "Rule Pattern", "root");
 ruleDrawing.newArtefact("Edge", { source: rv0, target: rv2 }, { width: 2, bend: 0, label: "re3" }, "rule-pattern");
+ruleDrawing.setIsRule(true);
 drawingStore.saveDrawing("ComposableEdges", ruleDrawing);
 console.log("Saved 'ComposableEdges' rule, isRule =", drawingStore.getDrawing("ComposableEdges")!.isRule);
 
@@ -294,6 +298,7 @@ ruleWithChildEq.newArtefact("Edge", { source: cev1, target: cev2 }, { width: 2, 
 ruleWithChildEq.addLayer("rule-pattern-eq", "Rule Pattern", "root");
 ruleWithChildEq.newArtefact("Edge", { source: cev0, target: cev2 }, { width: 2, bend: 0, label: "ce3" }, "rule-pattern-eq");
 ruleWithChildEq.newEqualityArtefact([cev0, cev1], "rule-pattern-eq");
+ruleWithChildEq.setIsRule(true);
 drawingStore.saveDrawing("ComposableEdgesChildEq", ruleWithChildEq);
 
 const tempChildEqRule = new Drawing(sortStore);
@@ -312,6 +317,7 @@ ruleChildEqApply.addLayer("conclusion", "Conclusion", "root");
 ruleChildEqApply.newArtefact("Edge", { source: qv0, target: qv2 }, { width: 2, bend: 0, label: "qe3" }, "conclusion");
 ruleChildEqApply.newEqualityArtefact([qv0, qv1, qv2], "conclusion");
 ruleChildEqApply.newEqualityArtefact([qe1, qe2], "conclusion");
+ruleChildEqApply.setIsRule(true);
 drawingStore.saveDrawing("ChildEqApply", ruleChildEqApply);
 
 const applyHost = new Drawing(sortStore);
@@ -372,6 +378,7 @@ function buildTrianglePairHost(
 const eqMatchRule = new Drawing(sortStore);
 buildTrianglePairHost(eqMatchRule, "shared");
 eqMatchRule.addLayer("rule-pattern", "Rule Pattern", "root");
+eqMatchRule.setIsRule(true);
 drawingStore.saveDrawing("SharedEdgeTriangles", eqMatchRule);
 
 // Host A: two triangles whose shared edge is a single artefact
@@ -467,16 +474,23 @@ function updateActiveDrawingBanner(): void {
     }
 
     if (tagEl) {
-        const ruleCheck = drawingStore.checkIsRule(drawing);
-        if (ruleCheck.isRule) {
-            if (drawingStore.checkIsFirstOrder(drawing)) {
+        if (drawing.isRule) {
+            const ruleCheck = drawing.checkRuleConditions();
+            if (!ruleCheck.isRule) {
+                tagEl.innerHTML = `<span class="rule-badge rule-badge-invalid" title="${ruleCheck.reason}">Rule (invalid)</span>`;
+            } else if (drawingStore.checkIsFirstOrder(drawing)) {
                 tagEl.innerHTML = `<span class="first-order-badge" title="First-order rule: root layer has only one child">First-Order Rule</span>`;
             } else {
-                tagEl.innerHTML = `<span class="rule-badge" title="This drawing satisfies rule conditions">Rule</span>`;
+                tagEl.innerHTML = `<span class="rule-badge" title="This drawing is explicitly marked as a rule">Rule</span>`;
             }
         } else {
             tagEl.innerHTML = "";
         }
+    }
+
+    const ruleCheckbox = document.getElementById("mark-rule-checkbox") as HTMLInputElement | null;
+    if (ruleCheckbox) {
+        ruleCheckbox.checked = drawing.isRule;
     }
 }
 
@@ -1256,6 +1270,29 @@ function renderDrawingsStore(): void {
             }
         });
 
+        const ruleToggleBtn = document.createElement("button");
+        ruleToggleBtn.className = "layer-btn";
+        if (savedDrawing.isRule) {
+            ruleToggleBtn.textContent = "Unmark Rule";
+            ruleToggleBtn.title = "Remove the explicit rule marking from this drawing";
+        } else {
+            ruleToggleBtn.textContent = "Mark Rule";
+            ruleToggleBtn.title = "Explicitly mark this drawing as a rule (must satisfy rule conditions)";
+        }
+        ruleToggleBtn.addEventListener("click", () => {
+            const newRuleState = !savedDrawing.isRule;
+            try {
+                if (savedDrawing.name === activeDrawingName) {
+                    drawing.setIsRule(newRuleState);
+                }
+                drawingStore.markAsRule(savedDrawing.name, newRuleState);
+                updateActiveDrawingBanner();
+                renderDrawingsStore();
+            } catch (err) {
+                alert((err as Error).message);
+            }
+        });
+
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "layer-btn";
         deleteBtn.style.color = "#e74c3c";
@@ -1274,6 +1311,7 @@ function renderDrawingsStore(): void {
 
         rowDiv.appendChild(loadBtn);
         rowDiv.appendChild(exportBtn);
+        rowDiv.appendChild(ruleToggleBtn);
         rowDiv.appendChild(deleteBtn);
         container.appendChild(rowDiv);
     }
@@ -1456,6 +1494,21 @@ renderDrawingsStore();
 renderLayersTree();
 renderMenu();
 renderInspector();
+
+// Mark Current Drawing as Rule Checkbox Listener
+const markRuleCheckbox = document.getElementById("mark-rule-checkbox") as HTMLInputElement | null;
+if (markRuleCheckbox) {
+    markRuleCheckbox.addEventListener("change", () => {
+        try {
+            drawing.setIsRule(markRuleCheckbox.checked);
+        } catch (err) {
+            alert((err as Error).message);
+            markRuleCheckbox.checked = drawing.isRule;
+        }
+        updateCanvas();
+        renderDrawingsStore();
+    });
+}
 
 // Save Drawing Button Listener
 const saveDrawingBtn = document.getElementById("save-drawing-btn");

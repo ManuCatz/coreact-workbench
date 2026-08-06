@@ -366,6 +366,9 @@
         letter-spacing: 0.5px;
         margin-left: 4px;
       }
+      .rule-badge-invalid {
+        background-color: #e74c3c;
+      }
       .rule-app-name .first-order-badge {
         margin-left: 6px;
       }
@@ -512,6 +515,9 @@
 
         <div id="current-drawing-banner" class="current-drawing-banner">
           <span style="color: #555;">Editing: <strong id="active-drawing-name" style="color: #2c3e50;">Unsaved Drawing</strong></span>
+          <label title="Explicitly mark the current drawing as a rule (must satisfy rule conditions)" style="display:flex; align-items:center; gap:4px; font-size:0.75rem; color:#555; cursor:pointer;">
+            <input type="checkbox" id="mark-rule-checkbox" /> Rule
+          </label>
           <span id="active-drawing-rule-tag"></span>
         </div>
         
