@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, applyFirstOrderRule } from './index';
+import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, applyFirstOrderRule, type SortDefinition } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -77,10 +77,30 @@ const svgContext = d3.select("#canvas");
 let activePositionPicker: {
     artefact: Artefact;
     attrName: string;
-    inputX: HTMLInputElement;
-    inputY: HTMLInputElement;
-    pickBtn: HTMLButtonElement;
+    inputX: HTMLInputElement | null;
+    inputY: HTMLInputElement | null;
+    pickBtn: HTMLButtonElement | null;
 } | null = null;
+
+function getSinglePositionAttr(sortDef: SortDefinition): string | null {
+    const positionAttrs = Object.entries(sortDef.attributes)
+        .filter(([_, type]) => type === "position")
+        .map(([name]) => name);
+    return positionAttrs.length === 1 ? positionAttrs[0] : null;
+}
+
+function clearActivePickerButton(): void {
+    const pickBtn = activePositionPicker?.pickBtn;
+    if (pickBtn) {
+        pickBtn.style.backgroundColor = "";
+    }
+}
+
+function stopPositionPicker(): void {
+    clearActivePickerButton();
+    activePositionPicker = null;
+    d3.select("body").style("cursor", "default");
+}
 
 svgContext.on("click", (event: MouseEvent) => {
     if (activePositionPicker) {
@@ -90,12 +110,10 @@ svgContext.on("click", (event: MouseEvent) => {
         const y = Math.round(coords[1]);
 
         activePositionPicker.artefact.data[activePositionPicker.attrName] = [x, y];
-        activePositionPicker.inputX.value = x.toString();
-        activePositionPicker.inputY.value = y.toString();
+        if (activePositionPicker.inputX) activePositionPicker.inputX.value = x.toString();
+        if (activePositionPicker.inputY) activePositionPicker.inputY.value = y.toString();
 
-        activePositionPicker.pickBtn.style.backgroundColor = "";
-        activePositionPicker = null;
-        d3.select("body").style("cursor", "default");
+        stopPositionPicker();
 
         updateCanvas();
         renderMenu();
@@ -301,11 +319,7 @@ function startMergeMode(preselectFirst: Artefact | null = null): void {
     draftArtefact = null;
     dependencyPickingFor = null;
     mergeHoverArtefact = null;
-    if (activePositionPicker) {
-        activePositionPicker.pickBtn.style.backgroundColor = "";
-        activePositionPicker = null;
-        d3.select("body").style("cursor", "default");
-    }
+    stopPositionPicker();
 
     mergeMode = true;
     if (preselectFirst && drawing.getArtefacts().includes(preselectFirst)) {
@@ -831,6 +845,7 @@ function renderMenu(): void {
                 inspectedArtefact = artefact;
                 draftArtefact = null;
                 dependencyPickingFor = null;
+                stopPositionPicker();
             }
             renderMenu();
             renderInspector();
@@ -969,6 +984,21 @@ function renderMenu(): void {
                 layerId: defaultLayerId
             };
             dependencyPickingFor = null;
+
+            stopPositionPicker();
+
+            const singlePositionAttr = getSinglePositionAttr(sortDef);
+            if (singlePositionAttr) {
+                activePositionPicker = {
+                    artefact: { data: draftArtefact.data } as Artefact,
+                    attrName: singlePositionAttr,
+                    inputX: null,
+                    inputY: null,
+                    pickBtn: null
+                };
+                d3.select("body").style("cursor", "crosshair");
+            }
+
             renderMenu();
             renderInspector();
             updateCanvas();
@@ -1082,10 +1112,7 @@ function renderDrawingsStore(): void {
                     inspectedArtefact = null;
                     draftArtefact = null;
                     dependencyPickingFor = null;
-                    if (activePositionPicker) {
-                        activePositionPicker = null;
-                        d3.select("body").style("cursor", "default");
-                    }
+                    stopPositionPicker();
                     updateCanvas();
                     renderLayersTree();
                     renderMenu();
@@ -1365,11 +1392,7 @@ if (newDrawingBtn) {
         mergeSecondArtefact = null;
         mergePickingFor = null;
         mergeHoverArtefact = null;
-        if (activePositionPicker) {
-            activePositionPicker.pickBtn.style.backgroundColor = "";
-            activePositionPicker = null;
-            d3.select("body").style("cursor", "default");
-        }
+        stopPositionPicker();
         drawingStore.saveDrawing(name, drawing);
         activeDrawingName = name;
         updateCanvas();
@@ -1409,10 +1432,7 @@ if (importDrawingBtn && drawingJsonUpload) {
                     inspectedArtefact = null;
                     draftArtefact = null;
                     dependencyPickingFor = null;
-                    if (activePositionPicker) {
-                        activePositionPicker = null;
-                        d3.select("body").style("cursor", "default");
-                    }
+                    stopPositionPicker();
                     updateCanvas();
                     renderLayersTree();
                     renderMenu();
@@ -1438,10 +1458,7 @@ if (clearBtn) {
             inspectedArtefact = null;
             draftArtefact = null;
             dependencyPickingFor = null;
-            if (activePositionPicker) {
-                activePositionPicker = null;
-                d3.select("body").style("cursor", "default");
-            }
+            stopPositionPicker();
             updateCanvas();
             renderLayersTree();
             renderMenu();
@@ -1478,10 +1495,7 @@ if (loadScriptBtn && scriptUpload) {
                 inspectedArtefact = null;
                 draftArtefact = null;
                 dependencyPickingFor = null;
-                if (activePositionPicker) {
-                    activePositionPicker = null;
-                    d3.select("body").style("cursor", "default");
-                }
+                stopPositionPicker();
 
                 const executor = new Function('sortStore', 'd3', code);
                 executor(sortStore, d3);
@@ -1941,13 +1955,9 @@ function renderInspector() {
                 pickBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     if (activePositionPicker && activePositionPicker.artefact.data === draftArtefact!.data && activePositionPicker.attrName === attrName) {
-                        activePositionPicker = null;
-                        d3.select("body").style("cursor", "default");
-                        pickBtn.style.backgroundColor = "";
+                        stopPositionPicker();
                     } else {
-                        if (activePositionPicker) {
-                            activePositionPicker.pickBtn.style.backgroundColor = "";
-                        }
+                        clearActivePickerButton();
                         activePositionPicker = {
                             artefact: draftProxy,
                             attrName,
@@ -2015,6 +2025,7 @@ function renderInspector() {
         cancelBtn.addEventListener("click", () => {
             draftArtefact = null;
             dependencyPickingFor = null;
+            stopPositionPicker();
             renderMenu();
             renderInspector();
             updateCanvas();
@@ -2056,6 +2067,7 @@ function renderInspector() {
                     );
                     draftArtefact = null;
                     dependencyPickingFor = null;
+                    stopPositionPicker();
                     updateCanvas();
                     renderMenu();
                     renderInspector();
@@ -2244,13 +2256,9 @@ function renderInspector() {
             pickBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (activePositionPicker && activePositionPicker.artefact === inspectedArtefact && activePositionPicker.attrName === attrName) {
-                    activePositionPicker = null;
-                    d3.select("body").style("cursor", "default");
-                    pickBtn.style.backgroundColor = "";
+                    stopPositionPicker();
                 } else {
-                    if (activePositionPicker) {
-                        activePositionPicker.pickBtn.style.backgroundColor = "";
-                    }
+                    clearActivePickerButton();
                     activePositionPicker = {
                         artefact: inspectedArtefact!,
                         attrName,
