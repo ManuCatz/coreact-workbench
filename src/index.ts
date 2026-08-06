@@ -1167,6 +1167,7 @@ export class DrawingStore {
 
 export interface RuleApplication {
     matchedArtefacts: Map<Artefact, Artefact>;
+    hostArtefacts: Set<Artefact>;
 }
 
 function extractEqualityConstraints(rule: Drawing): Array<{ children: Artefact[] }> {
@@ -1240,7 +1241,17 @@ function findRuleApplicationsInternal(
     const backtrack = (i: number): void => {
         if (i === ordered.length) {
             if (checkEqualityConstraints()) {
-                results.push({ matchedArtefacts: new Map(assignment) });
+                const hostArtefacts = new Set<Artefact>(used);
+                for (const [a, cand] of assignment) {
+                    for (const [k, dep] of Object.entries(a.dependencies)) {
+                        if (typeof dep === "boolean") continue;
+                        const hostDep = cand.dependencies[k];
+                        if (typeof hostDep !== "boolean" && hostDep !== undefined) {
+                            hostArtefacts.add(hostDep);
+                        }
+                    }
+                }
+                results.push({ matchedArtefacts: new Map(assignment), hostArtefacts });
             }
             return;
         }
@@ -1258,7 +1269,16 @@ function findRuleApplicationsInternal(
                     }
                 } else if (patternSet.has(dep)) {
                     const img = assignment.get(dep);
-                    if (img === undefined || cand.dependencies[k] !== img) {
+                    if (img === undefined) {
+                        ok = false;
+                        break;
+                    }
+                    const hostDep = cand.dependencies[k];
+                    if (typeof hostDep === "boolean" || hostDep === undefined) {
+                        ok = false;
+                        break;
+                    }
+                    if (hostDep !== img && !host.areEqual(hostDep, img, cand.layerId)) {
                         ok = false;
                         break;
                     }

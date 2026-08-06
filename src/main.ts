@@ -336,6 +336,65 @@ if (applyApps.length > 0) {
     }
 }
 
+// Rule matching up to host equalities: two triangles sharing one edge may match
+// host triangles whose edges are distinct but provably equal
+console.log("--- Matching Up To Equality Demo ---");
+
+function buildTrianglePairHost(
+    host: Drawing,
+    mode: "shared" | "equal" | "distinct"
+): void {
+    const mkVertex = (label: string) => host.newArtefact("Vertex", {}, { position: [0, 0], label }, "root");
+    const mkEdge = (label: string, source: Artefact, target: Artefact) =>
+        host.newArtefact("Edge", { source, target }, { width: 2, bend: 0, label }, "root");
+
+    const v0 = mkVertex("v0");
+    const v1 = mkVertex("v1");
+    const v2 = mkVertex("v2");
+    const v3 = mkVertex("v3");
+
+    const o = mkEdge("o", v0, v1);
+    const o2 = mode === "shared" ? o : mkEdge("o2", v0, v1);
+    const a1 = mkEdge("a1", v1, v2);
+    const a2 = mkEdge("a2", v2, v0);
+    const b1 = mkEdge("b1", v1, v3);
+    const b2 = mkEdge("b2", v3, v0);
+
+    host.newArtefact("Triangle", { "1": a1, "2": a2, o }, {}, "root");
+    host.newArtefact("Triangle", { "1": b1, "2": b2, o: o2 }, {}, "root");
+
+    if (mode === "equal") {
+        host.newEqualityArtefact([o, o2], "root");
+    }
+}
+
+// Rule: two triangles in the root layer sharing the same edge 'pe_o'
+const eqMatchRule = new Drawing(sortStore);
+buildTrianglePairHost(eqMatchRule, "shared");
+eqMatchRule.addLayer("rule-pattern", "Rule Pattern", "root");
+drawingStore.saveDrawing("SharedEdgeTriangles", eqMatchRule);
+
+// Host A: two triangles whose shared edge is a single artefact
+const hostShared = new Drawing(sortStore);
+buildTrianglePairHost(hostShared, "shared");
+
+// Host B: two triangles on DISTINCT edges made provably equal
+const hostEqualEdges = new Drawing(sortStore);
+buildTrianglePairHost(hostEqualEdges, "equal");
+
+// Host C: two triangles on distinct edges that are NOT provably equal
+const hostDistinctEdges = new Drawing(sortStore);
+buildTrianglePairHost(hostDistinctEdges, "distinct");
+
+const tempEqMatchRule = new Drawing(sortStore);
+drawingStore.loadDrawing("SharedEdgeTriangles", tempEqMatchRule);
+const eqMatchShared = findRuleApplications(tempEqMatchRule, hostShared);
+const eqMatchEqual = findRuleApplications(tempEqMatchRule, hostEqualEdges);
+const eqMatchDistinct = findRuleApplications(tempEqMatchRule, hostDistinctEdges);
+console.log("SharedEdgeTriangles on host with truly shared edge (expected >0):", eqMatchShared.length);
+console.log("SharedEdgeTriangles on host with provably equal edges (expected >0):", eqMatchEqual.length);
+console.log("SharedEdgeTriangles on host with distinct edges (expected 0):", eqMatchDistinct.length);
+
 // 7. Render UI Menu & Interaction
 let activeDrawingName: string | null = "Rule Drawing Demo";
 let inspectedArtefact: Artefact | null = null;
@@ -1336,7 +1395,7 @@ function renderRuleApplications(): void {
                 rowDiv.title = "Only first-order rules can be applied";
             }
 
-            const activeSet = new Set<Artefact>(app.matchedArtefacts.values());
+            const activeSet = app.hostArtefacts;
 
             rowDiv.addEventListener("mouseenter", () => {
                 if (mergeMode) return;
