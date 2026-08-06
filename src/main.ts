@@ -569,6 +569,8 @@ function updateCanvas(): void {
     }
 }
 
+const layerProvability = new Map<string, { provable: boolean; reason: string }>();
+
 function renderLayersTree(): void {
     const container = document.getElementById("layers-content");
     if (!container) return;
@@ -683,8 +685,39 @@ function renderLayersTree(): void {
         });
 
         rowDiv.appendChild(titleSpan);
+
+        const provableResult = layerProvability.get(layer.id);
+        if (provableResult) {
+            const provableBadge = document.createElement("span");
+            provableBadge.className = `provable-badge ${provableResult.provable ? "provable-ok" : "provable-fail"}`;
+            provableBadge.textContent = provableResult.provable ? "✓" : "✗";
+            provableBadge.title = provableResult.provable
+                ? "Provable: all artefacts in this layer are already in its parent layer"
+                : `Not provable: ${provableResult.reason}`;
+            rowDiv.appendChild(provableBadge);
+        }
+
+        const provableBtn = document.createElement("button");
+        if (layer.parentId !== null) {
+            provableBtn.className = "layer-btn provable-btn";
+            provableBtn.textContent = "Prove";
+            provableBtn.title = "Check if all artefacts in this layer are already in its parent layer";
+            provableBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                try {
+                    const result = drawing.checkLayerProvable(layer.id);
+                    layerProvability.set(layer.id, { provable: result.provable, reason: result.reason ?? "" });
+                    renderLayersTree();
+                } catch (err) {
+                    alert((err as Error).message);
+                }
+            });
+        } else {
+            provableBtn.style.display = "none";
+        }
         rowDiv.appendChild(hideBtn);
         rowDiv.appendChild(focusBtn);
+        rowDiv.appendChild(provableBtn);
         rowDiv.appendChild(colorCheckbox);
         rowDiv.appendChild(colorInput);
         rowDiv.appendChild(addChildBtn);
@@ -1234,6 +1267,7 @@ function renderDrawingsStore(): void {
                 try {
                     drawingStore.loadDrawing(savedDrawing.name, drawing);
                     activeDrawingName = savedDrawing.name;
+                    layerProvability.clear();
                     inspectedArtefact = null;
                     draftArtefact = null;
                     dependencyPickingFor = null;
@@ -1548,6 +1582,7 @@ if (newDrawingBtn) {
         }
         drawing.clear();
         activeDrawingName = null;
+        layerProvability.clear();
         inspectedArtefact = null;
         draftArtefact = null;
         dependencyPickingFor = null;
@@ -1593,6 +1628,7 @@ if (importDrawingBtn && drawingJsonUpload) {
                 if (confirm(`Imported drawing '${imported.name}'. Would you like to load it onto the canvas now?`)) {
                     drawingStore.loadDrawing(imported.name, drawing);
                     activeDrawingName = imported.name;
+                    layerProvability.clear();
                     inspectedArtefact = null;
                     draftArtefact = null;
                     dependencyPickingFor = null;
@@ -1619,6 +1655,7 @@ if (clearBtn) {
         if (confirm("Are you sure you want to clear all artefacts and layers?")) {
             drawing.clear();
             activeDrawingName = null;
+            layerProvability.clear();
             inspectedArtefact = null;
             draftArtefact = null;
             dependencyPickingFor = null;
@@ -1656,6 +1693,7 @@ if (loadScriptBtn && scriptUpload) {
             try {
                 sortStore.clear();
                 drawing.clear();
+                layerProvability.clear();
                 inspectedArtefact = null;
                 draftArtefact = null;
                 dependencyPickingFor = null;

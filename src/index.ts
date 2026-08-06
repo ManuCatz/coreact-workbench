@@ -236,6 +236,59 @@ export class Drawing {
         return checkRuleStructure(Array.from(this.layers.values()));
     }
 
+    public checkLayerProvable(layerId: string): { provable: boolean; reason?: string } {
+        const layer = this.layers.get(layerId);
+        if (!layer) {
+            throw new Error(`Consistency Check Failed: Layer '${layerId}' does not exist.`);
+        }
+        if (layer.parentId === null) {
+            return { provable: false, reason: `Layer '${layer.name}' has no parent layer.` };
+        }
+
+        const parentId: string = layer.parentId;
+        const parentLayer = this.layers.get(parentId);
+        const parentName = parentLayer ? parentLayer.name : parentId;
+        const layerArtefacts = this.artefacts.filter(a => a.layerId === layerId);
+        const parentArtefacts = this.artefacts.filter(b => b.layerId === parentId);
+
+        const labelOf = (a: Artefact): string => (typeof a.data.label === "string" ? a.data.label : a.sortName);
+
+        for (const art of layerArtefacts) {
+            if (art.sortName === "Equality") {
+                const children = art instanceof EqualityArtefact
+                    ? art.children
+                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+
+                if (children.length < 2) {
+                    return {
+                        provable: false,
+                        reason: `Degenerate equality artefact (fewer than 2 children) in layer '${layer.name}'.`
+                    };
+                }
+
+                const first = children[0];
+                for (let i = 1; i < children.length; i++) {
+                    if (!this.areEqual(first, children[i], parentId)) {
+                        return {
+                            provable: false,
+                            reason: `Equality between '${labelOf(first)}' and '${labelOf(children[i])}' in layer '${layer.name}' is not already provable in parent layer '${parentName}'.`
+                        };
+                    }
+                }
+            } else {
+                const match = parentArtefacts.find(b => this.areEqual(art, b, parentId));
+                if (!match) {
+                    return {
+                        provable: false,
+                        reason: `Artefact '${labelOf(art)}' (${art.sortName}) in layer '${layer.name}' has no provably equal counterpart in parent layer '${parentName}'.`
+                    };
+                }
+            }
+        }
+
+        return { provable: true };
+    }
+
     public addLayer(
         id: string,
         name: string,
