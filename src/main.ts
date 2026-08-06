@@ -1645,6 +1645,7 @@ function renderRuleApplications(): void {
                     } else {
                         const result = applySecondOrderRule(ruleDrawing, drawing, app, { hostName: activeDrawingName ?? "Unsaved Drawing", ruleName: savedRule.name });
                         console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} drawing(s).`);
+                        const createdNames: string[] = [];
                         for (const derived of result.derivedRules) {
                             let name = derived.name;
                             let suffix = 2;
@@ -1653,8 +1654,10 @@ function renderRuleApplications(): void {
                                 suffix++;
                             }
                             drawingStore.saveDrawing(name, derived.drawing);
+                            createdNames.push(name);
                             console.log(`Saved derived drawing '${name}': isRule=${derived.drawing.isRule}, artefacts=${derived.drawing.getArtefacts().length}.`);
                         }
+                        alert(`Applied rule '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s) and created ${createdNames.length} derived drawing(s):\n- ${createdNames.join("\n- ")}`);
                     }
                     updateCanvas();
                     renderMenu();
