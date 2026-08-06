@@ -1766,7 +1766,6 @@ function computeConclusionFlags(rule: Drawing, ruleRoot: Layer, childLayer: Laye
             if (a.getFlagLayer(key) !== childLayer.id) continue;
             const img = match.get(a);
             if (!img) continue;
-            if (img.dependencies[key] === true) continue;
             if (!result.has(img)) result.set(img, new Set());
             result.get(img)!.add(key);
         }

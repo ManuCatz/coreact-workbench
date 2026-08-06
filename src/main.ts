@@ -398,6 +398,27 @@ if (flagApplyApps.length > 0) {
             : `unexpected (${monoEdges.map(e => `${e.data.label}@${e.getFlagLayer("mono")}`).join(", ")})`);
 }
 
+// A conclusion-layer flag must be moved to the host root layer even if the flag already exists elsewhere
+const hostWithOtherMono = new Drawing(sortStore);
+const omv0 = hostWithOtherMono.newArtefact("Vertex", {}, { position: [0, 0], label: "omv0" }, "root");
+const omv1 = hostWithOtherMono.newArtefact("Vertex", {}, { position: [100, 0], label: "omv1" }, "root");
+const omv2 = hostWithOtherMono.newArtefact("Vertex", {}, { position: [200, 0], label: "omv2" }, "root");
+hostWithOtherMono.newArtefact("Edge", { source: omv0, target: omv1 }, { width: 2, bend: 0, label: "ome1" }, "root");
+hostWithOtherMono.addLayer("mono-layer", "Mono Layer", "root");
+hostWithOtherMono.newArtefact("Edge", { source: omv1, target: omv2, mono: { __flag: true, layerId: "mono-layer" } }, { width: 2, bend: 0, label: "ome2" }, "root");
+
+const tempFlagOverwriteRule = new Drawing(sortStore);
+drawingStore.loadDrawing("FlagInChildLayer", tempFlagOverwriteRule);
+const flagOverwriteApps = findFirstOrderRuleApplications(tempFlagOverwriteRule, hostWithOtherMono);
+if (flagOverwriteApps.length > 0) {
+    applyFirstOrderRule(tempFlagOverwriteRule, hostWithOtherMono, flagOverwriteApps[0]);
+    const overwrittenMono = hostWithOtherMono.getArtefacts().filter(a => a.dependencies["mono"] === true);
+    console.log("Applied FlagInChildLayer to host with pre-existing mono elsewhere (expected 1 ome2@root):",
+        overwrittenMono.length === 1 && overwrittenMono[0].getFlagLayer("mono") === "root"
+            ? `${overwrittenMono[0].data.label}@root`
+            : `unexpected (${overwrittenMono.map(e => `${e.data.label}@${e.getFlagLayer("mono")}`).join(", ")})`);
+}
+
 // Rule whose child layer contains an equality: matching must ignore it
 const ruleWithChildEq = new Drawing(sortStore);
 const cev0 = ruleWithChildEq.newArtefact("Vertex", {}, { position: [0, 0], label: "cev0" }, "root");
