@@ -1472,6 +1472,27 @@ export class DrawingStore {
         return Array.from(this.drawings.values());
     }
 
+    public renameDrawing(oldName: string, newName: string): SavedDrawing {
+        const saved = this.drawings.get(oldName);
+        if (!saved) {
+            throw new Error(`Consistency Check Failed: Drawing '${oldName}' does not exist.`);
+        }
+        const trimmed = newName.trim();
+        if (!trimmed) {
+            throw new Error("Consistency Check Failed: Drawing name cannot be empty.");
+        }
+        if (trimmed === oldName) {
+            return saved;
+        }
+        if (this.drawings.has(trimmed)) {
+            throw new Error(`Consistency Check Failed: A drawing named '${trimmed}' already exists.`);
+        }
+        this.drawings.delete(oldName);
+        saved.name = trimmed;
+        this.drawings.set(trimmed, saved);
+        return saved;
+    }
+
     public deleteDrawing(name: string): boolean {
         return this.drawings.delete(name);
     }

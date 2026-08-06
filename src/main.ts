@@ -938,6 +938,24 @@ function renderLayersTree(): void {
         }
         actionsDiv.appendChild(hideBtn);
         actionsDiv.appendChild(focusBtn);
+
+        const renameBtn = document.createElement("button");
+        renameBtn.className = "layer-btn";
+        renameBtn.textContent = "Rename";
+        renameBtn.title = `Rename layer '${layer.name}'`;
+        renameBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const newName = prompt(`Enter new name for layer '${layer.name}':`, layer.name);
+            if (newName && newName.trim() && newName.trim() !== layer.name) {
+                layer.name = newName.trim();
+                updateCanvas();
+                renderLayersTree();
+                renderMenu();
+                renderInspector();
+            }
+        });
+
+        actionsDiv.appendChild(renameBtn);
         actionsDiv.appendChild(provableBtn);
         actionsDiv.appendChild(colorCheckbox);
         actionsDiv.appendChild(colorInput);
@@ -1535,6 +1553,25 @@ function renderDrawingsStore(): void {
             }
         });
 
+        const renameBtn = document.createElement("button");
+        renameBtn.className = "layer-btn";
+        renameBtn.textContent = "Rename";
+        renameBtn.title = `Rename drawing '${savedDrawing.name}'`;
+        renameBtn.addEventListener("click", () => {
+            const newName = prompt(`Enter new name for drawing '${savedDrawing.name}':`, savedDrawing.name);
+            if (!newName || !newName.trim() || newName.trim() === savedDrawing.name) return;
+            try {
+                drawingStore.renameDrawing(savedDrawing.name, newName.trim());
+                if (savedDrawing.name === activeDrawingName) {
+                    activeDrawingName = newName.trim();
+                }
+                updateActiveDrawingBanner();
+                renderDrawingsStore();
+            } catch (err) {
+                alert((err as Error).message);
+            }
+        });
+
         const ruleToggleBtn = document.createElement("button");
         ruleToggleBtn.className = "layer-btn";
         if (savedDrawing.isRule) {
@@ -1573,6 +1610,7 @@ function renderDrawingsStore(): void {
         });
 
         actionsDiv.appendChild(loadBtn);
+        actionsDiv.appendChild(renameBtn);
         actionsDiv.appendChild(ruleToggleBtn);
         actionsDiv.appendChild(deleteBtn);
         rowDiv.appendChild(headerDiv);
