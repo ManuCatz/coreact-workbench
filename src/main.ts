@@ -206,6 +206,29 @@ try {
     }
 }
 
+// --- Provability & Flag Guard Tests ---
+console.log("--- Provability Tests ---");
+
+{
+    const provDrawing = new Drawing(sortStore);
+    provDrawing.addLayer("prov-child", "Prov Child", "root");
+    const pv0 = provDrawing.newArtefact("Vertex", {}, { position: [700, 300], label: "pv0" }, "root");
+    const pv1 = provDrawing.newArtefact("Vertex", {}, { position: [900, 300], label: "pv1" }, "root");
+    const pre = provDrawing.newArtefact("Edge", { source: pv0, target: pv1 }, { width: 2, bend: 0, label: "pre" }, "root");
+    const pce = provDrawing.newArtefact("Edge", { source: pv0, target: pv1 }, { width: 2, bend: 0, label: "pce" }, "prov-child");
+
+    provDrawing.addEqualityArtefactUnchecked([pre, pce], "root");
+
+    const provNoFlag = provDrawing.checkLayerProvable("prov-child");
+    console.log("checkLayerProvable('prov-child') without flag (expected provable: true):", JSON.stringify(provNoFlag));
+
+    pre.dependencies["mono"] = true;
+    pre.flagLayers["mono"] = "prov-child";
+
+    const provWithFlag = provDrawing.checkLayerProvable("prov-child");
+    console.log("checkLayerProvable('prov-child') with flag on root edge leaving from child layer (expected provable: false):", JSON.stringify(provWithFlag));
+}
+
 // --- Equality Artefact Tests ---
 console.log("--- Equality Artefact Tests ---");
 

@@ -287,6 +287,23 @@ export class Drawing {
 
         const labelOf = (a: Artefact): string => (typeof a.data.label === "string" ? a.data.label : a.sortName);
 
+        const layerFlagScope = this.getDescendants(layerId);
+
+        for (const art of this.artefacts) {
+            for (const [flagKey, flagVal] of Object.entries(art.dependencies)) {
+                if (flagVal === true) {
+                    const flagLayer = art.getFlagLayer(flagKey);
+                    if (layerFlagScope.has(flagLayer)) {
+                        const flagLayerName = this.layers.get(flagLayer)?.name || flagLayer;
+                        return {
+                            provable: false,
+                            reason: `Flag '${flagKey}' on artefact '${labelOf(art)}' (${art.sortName}) is established in layer '${flagLayerName}', within layer '${layer.name}' or its descendants; the layer is not provable in parent layer '${parentName}'.`
+                        };
+                    }
+                }
+            }
+        }
+
         for (const art of layerArtefacts) {
             if (art.sortName === "Equality") {
                 const children = art instanceof EqualityArtefact
