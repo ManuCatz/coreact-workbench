@@ -765,6 +765,12 @@ function renderLayersTree(): void {
         titleSpan.textContent = layer.name;
         titleSpan.title = `ID: ${layer.id}${!isEffectivelyVisible ? " (hidden)" : ""}`;
 
+        const headerDiv = document.createElement("div");
+        headerDiv.className = "layer-row-header";
+
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "layer-row-actions";
+
         const hideBtn = document.createElement("button");
         hideBtn.className = `layer-btn hide-btn ${!layer.visible ? "active" : ""}`;
         hideBtn.textContent = layer.visible ? "Hide" : "Show";
@@ -855,7 +861,7 @@ function renderLayersTree(): void {
             }
         });
 
-        rowDiv.appendChild(titleSpan);
+        headerDiv.appendChild(titleSpan);
 
         const provableResult = layerProvability.get(layer.id);
         if (provableResult) {
@@ -865,7 +871,7 @@ function renderLayersTree(): void {
             provableBadge.title = provableResult.provable
                 ? "Provable: all artefacts in this layer are already in its parent layer"
                 : `Not provable: ${provableResult.reason}`;
-            rowDiv.appendChild(provableBadge);
+            headerDiv.appendChild(provableBadge);
         }
 
         const provableBtn = document.createElement("button");
@@ -886,13 +892,15 @@ function renderLayersTree(): void {
         } else {
             provableBtn.style.display = "none";
         }
-        rowDiv.appendChild(hideBtn);
-        rowDiv.appendChild(focusBtn);
-        rowDiv.appendChild(provableBtn);
-        rowDiv.appendChild(colorCheckbox);
-        rowDiv.appendChild(colorInput);
-        rowDiv.appendChild(addChildBtn);
-        rowDiv.appendChild(deleteBtn);
+        actionsDiv.appendChild(hideBtn);
+        actionsDiv.appendChild(focusBtn);
+        actionsDiv.appendChild(provableBtn);
+        actionsDiv.appendChild(colorCheckbox);
+        actionsDiv.appendChild(colorInput);
+        actionsDiv.appendChild(addChildBtn);
+        actionsDiv.appendChild(deleteBtn);
+        rowDiv.appendChild(headerDiv);
+        rowDiv.appendChild(actionsDiv);
         itemDiv.appendChild(rowDiv);
 
         const children = allLayers.filter(l => l.parentId === layer.id);

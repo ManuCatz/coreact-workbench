@@ -211,7 +211,8 @@
       }
       .layer-row {
         display: flex;
-        align-items: center;
+        flex-direction: column;
+        align-items: stretch;
         gap: 4px;
         padding: 3px 6px;
         background-color: #f8f9fa;
@@ -227,13 +228,24 @@
         opacity: 0.65;
         background-color: #f2f2f2;
       }
+      .layer-row-header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+      }
+      .layer-row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
       .layer-title {
         font-weight: 600;
         color: #2c3e50;
         flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
+        overflow-wrap: break-word;
       }
       .layer-btn {
         padding: 2px 5px;
