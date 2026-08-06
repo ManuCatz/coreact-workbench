@@ -2143,7 +2143,7 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' has no child layer.`);
         }
 
-        derived.addLayer(childOfPremise.id, childOfPremise.name, derivedRootId, childOfPremise.color, childOfPremise.colorEnabled);
+        derived.addLayer(childOfPremise.id, "Goal", derivedRootId, childOfPremise.color, childOfPremise.colorEnabled);
 
         // Copy the child layer B's artefacts, adapted to this parent
         const bArts = rule.getArtefacts()
