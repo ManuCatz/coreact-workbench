@@ -1184,20 +1184,9 @@ export class DrawingStore {
         return saved;
     }
 
-    public saveDrawing(name: string, drawing: Drawing): SavedDrawing {
-        if (!name || !name.trim()) {
-            throw new Error("Consistency Check Failed: Drawing name cannot be empty.");
-        }
-
-        const trimmedName = name.trim();
+    public static drawingToSavedDrawing(name: string, drawing: Drawing): SavedDrawing {
+        const trimmedName = (name || "Drawing").trim() || "Drawing";
         const markedAsRule = drawing.isRule;
-
-        if (markedAsRule) {
-            const ruleCheck = this.checkIsRule(drawing);
-            if (!ruleCheck.isRule) {
-                throw new Error(`Consistency Check Failed: Drawing '${trimmedName}' is marked as a rule but does not satisfy rule conditions: ${ruleCheck.reason}`);
-            }
-        }
 
         const artefacts = drawing.getArtefacts();
         const artefactToId = new Map<Artefact, string>();
@@ -1234,14 +1223,31 @@ export class DrawingStore {
             };
         });
 
-        const savedDrawing: SavedDrawing = {
+        return {
             name: trimmedName,
             layers: layersData,
             artefacts: artefactsData,
             isRule: markedAsRule,
             isFirstOrder: markedAsRule && DrawingStore.firstOrderFromLayers(layersData)
         };
+    }
 
+    public saveDrawing(name: string, drawing: Drawing): SavedDrawing {
+        if (!name || !name.trim()) {
+            throw new Error("Consistency Check Failed: Drawing name cannot be empty.");
+        }
+
+        const trimmedName = name.trim();
+        const markedAsRule = drawing.isRule;
+
+        if (markedAsRule) {
+            const ruleCheck = this.checkIsRule(drawing);
+            if (!ruleCheck.isRule) {
+                throw new Error(`Consistency Check Failed: Drawing '${trimmedName}' is marked as a rule but does not satisfy rule conditions: ${ruleCheck.reason}`);
+            }
+        }
+
+        const savedDrawing = DrawingStore.drawingToSavedDrawing(trimmedName, drawing);
         this.drawings.set(trimmedName, savedDrawing);
         return savedDrawing;
     }

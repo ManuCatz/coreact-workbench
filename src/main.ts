@@ -1,6 +1,7 @@
 import * as d3 from 'd3';
 import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, findSecondOrderRuleApplications, applyFirstOrderRule, applySecondOrderRule, type SortDefinition, type SavedDrawing } from './index';
-import { exportDrawingsToRocq } from './rocq_export';
+import { exportDrawingsToRocq, drawingExportNames } from './rocq_export';
+import { RocqRecorder } from './rocq_recording';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -10,9 +11,10 @@ const sortStore = new SortStore();
 // 2. Load default sorts via executor
 new Function('sortStore', 'd3', defaultSortsCode)(sortStore, d3);
 
-// 3. Create DrawingStore and Drawing instances
+// 3. Create DrawingStore, Drawing and RocqRecorder instances
 const drawingStore = new DrawingStore();
 const drawing = new Drawing(sortStore);
+const rocqRecorder = new RocqRecorder();
 
 // Set up Layer Tree hierarchy for Demo
 // Root Layer ("root") is automatically initialized by Drawing
@@ -929,6 +931,9 @@ function renderLayersTree(): void {
                 try {
                     const result = drawing.checkLayerProvable(layer.id);
                     layerProvability.set(layer.id, { provable: result.provable, reason: result.reason ?? "" });
+                    if (result.provable) {
+                        rocqRecorder.recordProveSuccess(activeDrawingName ?? "Unsaved Drawing");
+                    }
                     renderLayersTree();
                 } catch (err) {
                     alert((err as Error).message);
@@ -1733,13 +1738,21 @@ function renderRuleApplications(): void {
                             while (drawingStore.getDrawing(name)) {
                                 name = `${derived.name} (${suffix})`;
                                 suffix++;
-                            }
+                        }
                             drawingStore.saveDrawing(name, derived.drawing);
                             createdNames.push(name);
                             console.log(`Saved derived drawing '${name}': isRule=${derived.drawing.isRule}, artefacts=${derived.drawing.getArtefacts().length}.`);
                         }
                         alert(`Applied rule '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s) and created ${createdNames.length} derived drawing(s):\n- ${createdNames.join("\n- ")}`);
                     }
+                    rocqRecorder.recordRuleApply(
+                        ruleDrawing,
+                        savedRule.name,
+                        app,
+                        drawing,
+                        activeDrawingName ?? "Unsaved Drawing",
+                        sortStore
+                    );
                     updateCanvas();
                     renderMenu();
                     renderInspector();
@@ -1997,6 +2010,35 @@ if (exportRocqBtn) {
                 });
         } catch (err) {
             alert(`Error exporting drawings:\n${(err as Error).message}`);
+        }
+    });
+}
+
+// Rocq Recording Button Listener
+const rocqRecordingBtn = document.getElementById("rocq-recording-btn");
+if (rocqRecordingBtn) {
+    rocqRecordingBtn.addEventListener("click", () => {
+        try {
+            if (rocqRecorder.isActive()) {
+                const script = rocqRecorder.stop();
+                rocqRecordingBtn.textContent = "Rocq recording";
+                rocqRecordingBtn.style.backgroundColor = "#d35400";
+                navigator.clipboard
+                    .writeText(script)
+                    .then(() => {
+                        alert("Rocq recording script copied to clipboard.");
+                    })
+                    .catch(() => {
+                        alert("Error copying recording:\nClipboard access failed.");
+                    });
+            } else {
+                const name = activeDrawingName ?? "Unsaved Drawing";
+                rocqRecorder.start(drawing, name, sortStore);
+                rocqRecordingBtn.textContent = "Stop recording";
+                rocqRecordingBtn.style.backgroundColor = "#c0392b";
+            }
+        } catch (err) {
+            alert(`Rocq Recording Error:\n${(err as Error).message}`);
         }
     });
 }
@@ -2766,11 +2808,36 @@ function renderInspector() {
     }
     labelInput.addEventListener("change", (e) => {
         const target = e.target as HTMLInputElement;
+        const activeName = activeDrawingName ?? "Unsaved Drawing";
+        const isRootLayer = inspectedArtefact!.layerId === "root" || drawing.getLayer(inspectedArtefact!.layerId)?.parentId === null;
+        let oldFieldName: string | null = null;
+        if (rocqRecorder.isActive() && isRootLayer) {
+            const savedOld = DrawingStore.drawingToSavedDrawing(activeName, drawing);
+            const oldExport = drawingExportNames(savedOld, sortStore);
+            const artIdx = drawing.getArtefacts().indexOf(inspectedArtefact!);
+            if (artIdx !== -1) {
+                oldFieldName = oldExport.fieldNames.get(`art_${artIdx}`) ?? null;
+            }
+        }
+
         if (target.value.trim() === "") {
             delete inspectedArtefact!.data.label;
         } else {
             inspectedArtefact!.data.label = target.value;
         }
+
+        if (rocqRecorder.isActive() && isRootLayer && oldFieldName) {
+            const savedNew = DrawingStore.drawingToSavedDrawing(activeName, drawing);
+            const newExport = drawingExportNames(savedNew, sortStore);
+            const artIdx = drawing.getArtefacts().indexOf(inspectedArtefact!);
+            if (artIdx !== -1) {
+                const newFieldName = newExport.fieldNames.get(`art_${artIdx}`);
+                if (newFieldName && newFieldName !== oldFieldName) {
+                    rocqRecorder.recordRename(oldFieldName, newFieldName, activeName);
+                }
+            }
+        }
+
         triggerUpdate();
     });
     labelGroup.appendChild(labelInput);

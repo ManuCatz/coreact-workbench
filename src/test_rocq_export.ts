@@ -1,8 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as d3 from "d3";
-import { SortStore, Drawing, DrawingStore } from "./index";
+import { SortStore, Drawing, DrawingStore, findFirstOrderRuleApplications, findSecondOrderRuleApplications } from "./index";
 import { exportDrawingsToRocq } from "./rocq_export";
+import { RocqRecorder } from "./rocq_recording";
 
 const rootDir = path.resolve(process.cwd());
 
@@ -78,5 +79,82 @@ rule2.newArtefact("Edge", { source: rx, target: ry }, { width: 2, bend: 0, label
 rule2.setIsRule(true);
 store.saveDrawing("SecondOrderRule", rule2);
 
-const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
-process.stdout.write(code);
+// Main Host Drawing for Recording Test
+const mainDrawing = new Drawing(sortStore);
+mainDrawing.getLayer("root")!.name = "Root Layer";
+const ma = mainDrawing.newArtefact("Vertex", {}, { position: [0, 0], label: "a" }, "root");
+const mb = mainDrawing.newArtefact("Vertex", {}, { position: [100, 0], label: "b" }, "root");
+mainDrawing.addLayer("child", "Child Layer", "root");
+mainDrawing.newArtefact("Edge", { source: ma, target: mb }, { width: 2, bend: 0, label: "g" }, "child");
+mainDrawing.newArtefact(
+    "Edge",
+    { source: ma, target: mb, mono: { __flag: true, layerId: "root" } },
+    { width: 2, bend: 0, label: "mf" },
+    "root"
+);
+mainDrawing.newEqualityArtefact([ma, mb], "root");
+store.saveDrawing("MainDrawing", mainDrawing);
+
+// Rule with a mono flag established in its root layer
+const monoRule = new Drawing(sortStore);
+monoRule.getLayer("root")!.name = "Root Layer";
+const mx = monoRule.newArtefact("Vertex", {}, { position: [0, 0], label: "x" }, "root");
+const my = monoRule.newArtefact("Vertex", {}, { position: [100, 0], label: "y" }, "root");
+monoRule.newArtefact(
+    "Edge",
+    { source: mx, target: my, mono: { __flag: true, layerId: "root" } },
+    { width: 2, bend: 0, label: "f" },
+    "root"
+);
+monoRule.addLayer("conclusion", "Conclusion Layer", "root");
+monoRule.newArtefact("Edge", { source: mx, target: my }, { width: 2, bend: 0, label: "g" }, "conclusion");
+monoRule.setIsRule(true);
+store.saveDrawing("MonoRule", monoRule);
+
+// Rule with an equality artefact in its root layer
+const eqRule = new Drawing(sortStore);
+eqRule.getLayer("root")!.name = "Root Layer";
+const ex = eqRule.newArtefact("Vertex", {}, { position: [0, 0], label: "x" }, "root");
+const ey = eqRule.newArtefact("Vertex", {}, { position: [100, 0], label: "y" }, "root");
+eqRule.newEqualityArtefact([ex, ey], "root");
+eqRule.addLayer("conclusion", "Conclusion Layer", "root");
+eqRule.newArtefact("Edge", { source: ex, target: ey }, { width: 2, bend: 0, label: "g" }, "conclusion");
+eqRule.setIsRule(true);
+store.saveDrawing("EqRule", eqRule);
+
+// Record operations on MainDrawing
+const recorder = new RocqRecorder();
+recorder.start(mainDrawing, "MainDrawing", sortStore);
+
+// Apply Foo
+const fooApps = findFirstOrderRuleApplications(foo, mainDrawing);
+if (fooApps.length > 0) {
+    recorder.recordRuleApply(foo, "Foo", fooApps[0], mainDrawing, "MainDrawing", sortStore);
+}
+
+// Apply SecondOrderRule
+const soApps = findSecondOrderRuleApplications(rule2, mainDrawing);
+if (soApps.length > 0) {
+    recorder.recordRuleApply(rule2, "SecondOrderRule", soApps[0], mainDrawing, "MainDrawing", sortStore);
+}
+
+// Apply MonoRule (mono flag proof field in the rule root record)
+const monoApps = findFirstOrderRuleApplications(monoRule, mainDrawing);
+if (monoApps.length === 0) {
+    throw new Error("MonoRule produced no applications on MainDrawing");
+}
+recorder.recordRuleApply(monoRule, "MonoRule", monoApps[0], mainDrawing, "MainDrawing", sortStore);
+
+// Apply EqRule (equality proof field in the rule root record)
+const eqApps = findFirstOrderRuleApplications(eqRule, mainDrawing);
+if (eqApps.length === 0) {
+    throw new Error("EqRule produced no applications on MainDrawing");
+}
+recorder.recordRuleApply(eqRule, "EqRule", eqApps[0], mainDrawing, "MainDrawing", sortStore);
+
+recorder.recordProveSuccess("MainDrawing");
+const recordingScript = recorder.stop();
+
+const exportCode = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
+const fullCode = exportCode + "\n" + recordingScript;
+process.stdout.write(fullCode);

@@ -12,7 +12,7 @@ const ROCQ_KEYWORDS: ReadonlySet<string> = new Set([
     "true", "false", "pair", "ex", "sig", "id"
 ]);
 
-function sanitizeIdent(raw: string): string {
+export function sanitizeIdent(raw: string): string {
     let s = raw.replace(/[^A-Za-z0-9_']/g, "_");
     if (!s) {
         s = "x";
@@ -26,7 +26,7 @@ function sanitizeIdent(raw: string): string {
     return s;
 }
 
-class NameRegistry {
+export class NameRegistry {
     private readonly used: Set<string>;
 
     constructor(initial: Iterable<string> = []) {
@@ -128,13 +128,13 @@ function flagHeaderType(sortStore: SortStore, sortName: string): string {
     return `forall \`(e : ${sortName} ${leafs.join(" ")}), Prop`;
 }
 
-interface FieldItem {
+export interface FieldItem {
     name: string;
     type: string;
     deps: string[];
 }
 
-function topoSortFields(items: FieldItem[]): FieldItem[] {
+export function topoSortFields(items: FieldItem[]): FieldItem[] {
     const names = items.map(item => item.name);
     const nameSet = new Set(names);
     const indeg = new Map<string, number>();
@@ -162,7 +162,7 @@ function topoSortFields(items: FieldItem[]): FieldItem[] {
     return order;
 }
 
-interface DrawingModel {
+export interface DrawingModel {
     name: string;
     layerById: Map<string, LayerData>;
     artefactById: Map<string, ArtefactData>;
@@ -172,7 +172,7 @@ interface DrawingModel {
     fieldNames: Map<string, string>;
 }
 
-function buildDrawingModel(
+export function buildDrawingModel(
     savedDrawing: SavedDrawing,
     registry: NameRegistry
 ): DrawingModel {
@@ -308,27 +308,27 @@ function equalityFieldType(model: DrawingModel, art: ArtefactData): string {
     return pairs.join(" /\\ ");
 }
 
-function exportDrawing(
+interface FlagField {
+    layerId: string;
+    name: string;
+    type: string;
+    depFieldNames: string[];
+}
+
+export interface ProofFieldNames {
+    flagFieldNames: Map<string, string>;
+    equalityFieldNames: Map<string, string>;
+    flagFieldsByLayer: Map<string, FlagField[]>;
+}
+
+export function computeProofFieldNames(
     savedDrawing: SavedDrawing,
     sortStore: SortStore,
+    model: DrawingModel,
     registry: NameRegistry
-): string[] {
-    const model = buildDrawingModel(savedDrawing, registry);
-    const lines: string[] = [];
-
-    interface FlagField {
-        layerId: string;
-        name: string;
-        type: string;
-        depFieldNames: string[];
-    }
+): ProofFieldNames {
+    const flagFieldNames = new Map<string, string>();
     const flagFieldsByLayer = new Map<string, FlagField[]>();
-    const emittedLayers = new Set<string>();
-    const addFlagField = (layerId: string, flag: FlagField): void => {
-        const list = flagFieldsByLayer.get(layerId) ?? [];
-        list.push(flag);
-        flagFieldsByLayer.set(layerId, list);
-    };
 
     for (const art of savedDrawing.artefacts) {
         if (art.sortName === "Equality") {
@@ -348,14 +348,43 @@ function exportDrawing(
                 throw new Error(`Consistency Check Failed: No field assigned for flagged artefact '${labelOf(art)}'.`);
             }
             const name = registry.unique(`${flagKey}_${artefactFieldName}`);
-            addFlagField(flagLayerId, {
+            flagFieldNames.set(`${art.id}::${flagKey}`, name);
+            const list = flagFieldsByLayer.get(flagLayerId) ?? [];
+            list.push({
                 layerId: flagLayerId,
                 name,
                 type: `${flagKey} ${refFrom(model, flagLayerId, art.id)}`,
                 depFieldNames: art.layerId === flagLayerId ? [artefactFieldName] : []
             });
+            flagFieldsByLayer.set(flagLayerId, list);
         }
     }
+
+    const equalityFieldNames = new Map<string, string>();
+    for (const layer of model.layerOrder) {
+        const layerArtefacts = savedDrawing.artefacts.filter(art => art.layerId === layer.id);
+        for (const art of layerArtefacts) {
+            if (art.sortName !== "Equality") {
+                continue;
+            }
+            equalityFieldNames.set(art.id, registry.unique(equalityFieldName(model, art)));
+        }
+    }
+
+    return { flagFieldNames, equalityFieldNames, flagFieldsByLayer };
+}
+
+function exportDrawing(
+    savedDrawing: SavedDrawing,
+    sortStore: SortStore,
+    registry: NameRegistry
+): string[] {
+    const model = buildDrawingModel(savedDrawing, registry);
+    const proofNames = computeProofFieldNames(savedDrawing, sortStore, model, registry);
+    const lines: string[] = [];
+
+    const flagFieldsByLayer = proofNames.flagFieldsByLayer;
+    const emittedLayers = new Set<string>();
 
     for (const layer of model.layerOrder) {
         const layerArtefacts = savedDrawing.artefacts.filter(art => art.layerId === layer.id);
@@ -363,7 +392,10 @@ function exportDrawing(
 
         for (const art of layerArtefacts) {
             if (art.sortName === "Equality") {
-                const name = registry.unique(equalityFieldName(model, art));
+                const name = proofNames.equalityFieldNames.get(art.id);
+                if (!name) {
+                    throw new Error(`Consistency Check Failed: No field name computed for equality artefact '${labelOf(art)}'.`);
+                }
                 const childIds = stringDepEntries(art.dependencies).map(([, value]) => value);
                 const depFieldNames = childIds
                     .filter(id => model.artefactById.get(id)?.layerId === layer.id)
@@ -562,4 +594,56 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
     }
 
     return lines.join("\n") + "\n";
+}
+
+export interface DrawingExportNames {
+    moduleName: string;
+    ruleParam: string | null;
+    recordNames: Map<string, string>;
+    fieldNames: Map<string, string>;
+    flagFieldNames: Map<string, string>;
+    equalityFieldNames: Map<string, string>;
+    model: DrawingModel;
+}
+
+export function drawingExportNames(savedDrawing: SavedDrawing, sortStore: SortStore): DrawingExportNames {
+    const registry = new NameRegistry();
+    const sortDefs = sortStore.getAllSorts().filter(def => def.name !== "Equality");
+
+    const flagPredicates = new Set<string>();
+    for (const def of sortDefs) {
+        for (const [flagKey, depSortName] of Object.entries(def.dependencies)) {
+            if (depSortName === "flag") {
+                flagPredicates.add(flagKey);
+            }
+        }
+    }
+    for (const name of flagPredicates) {
+        registry.reserve(name);
+    }
+    for (const def of sortDefs) {
+        registry.reserve(def.name);
+    }
+    registry.reserve("Equality");
+    if (savedDrawing.isRule) {
+        registry.reserve("rule");
+    }
+
+    const moduleName = registry.unique(sanitizeIdent(savedDrawing.name || "Drawing"));
+    const model = buildDrawingModel(savedDrawing, registry);
+    const proofNames = computeProofFieldNames(savedDrawing, sortStore, model, registry);
+    let ruleParam: string | null = null;
+    if (savedDrawing.isRule) {
+        ruleParam = registry.unique(`${moduleName}_rule`);
+    }
+
+    return {
+        moduleName,
+        ruleParam,
+        recordNames: model.recordNames,
+        fieldNames: model.fieldNames,
+        flagFieldNames: proofNames.flagFieldNames,
+        equalityFieldNames: proofNames.equalityFieldNames,
+        model
+    };
 }
