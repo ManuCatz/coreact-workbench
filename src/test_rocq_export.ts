@@ -54,5 +54,29 @@ const store = new DrawingStore();
 store.saveDrawing("Initial Drawing", drawing);
 store.saveDrawing("Second Drawing", drawing2);
 
+// First-order rule Foo
+const foo = new Drawing(sortStore);
+foo.getLayer("root")!.name = "Root Layer";
+const fx = foo.newArtefact("Vertex", {}, { position: [0, 0], label: "x" }, "root");
+const fy = foo.newArtefact("Vertex", {}, { position: [100, 0], label: "y" }, "root");
+foo.addLayer("conclusion", "Conclusion", "root");
+foo.newArtefact("Edge", { source: fx, target: fy }, { width: 2, bend: 0, label: "f" }, "conclusion");
+foo.setIsRule(true);
+store.saveDrawing("Foo", foo);
+
+// Second-order rule with premise
+const rule2 = new Drawing(sortStore);
+rule2.getLayer("root")!.name = "Root Layer";
+const rx = rule2.newArtefact("Vertex", {}, { position: [0, 0], label: "x" }, "root");
+const ry = rule2.newArtefact("Vertex", {}, { position: [100, 0], label: "y" }, "root");
+rule2.addLayer("premise-1", "Premise Layer", "root");
+rule2.newArtefact("Edge", { source: rx, target: ry }, { width: 2, bend: 0, label: "pe" }, "premise-1");
+rule2.addLayer("premise-1-child", "Premise Child Layer", "premise-1");
+rule2.newArtefact("Edge", { source: rx, target: ry }, { width: 2, bend: 0, label: "pce" }, "premise-1-child");
+rule2.addLayer("conclusion", "Conclusion Layer", "root");
+rule2.newArtefact("Edge", { source: rx, target: ry }, { width: 2, bend: 0, label: "ce" }, "conclusion");
+rule2.setIsRule(true);
+store.saveDrawing("SecondOrderRule", rule2);
+
 const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
 process.stdout.write(code);

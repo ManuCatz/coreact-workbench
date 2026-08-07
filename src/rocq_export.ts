@@ -323,6 +323,7 @@ function exportDrawing(
         depFieldNames: string[];
     }
     const flagFieldsByLayer = new Map<string, FlagField[]>();
+    const emittedLayers = new Set<string>();
     const addFlagField = (layerId: string, flag: FlagField): void => {
         const list = flagFieldsByLayer.get(layerId) ?? [];
         list.push(flag);
@@ -401,6 +402,8 @@ function exportDrawing(
             continue;
         }
 
+        emittedLayers.add(layer.id);
+
         const ordered = topoSortFields(items);
         const chain = effectiveAncestors(model, layer.id);
         const ancestorChain = chain.slice(1).reverse();
@@ -417,7 +420,8 @@ function exportDrawing(
                 if (!recordName) {
                     throw new Error(`Consistency Check Failed: No record assigned for ancestor layer of '${layer.name}'.`);
                 }
-                paramStrs.push(`(${paramName} : ${recordName}${argNames.length > 0 ? ` ${argNames.join(" ")}` : ""})`);
+                const recordTypeStr = argNames.length > 0 ? `${recordName} ${argNames.join(" ")}` : recordName;
+                paramStrs.push(`(${paramName} : ${recordTypeStr})`);
                 argNames.push(paramName);
             }
             lines.push("");
@@ -428,6 +432,62 @@ function exportDrawing(
             lines.push(`    ${item.name} : ${item.type};`);
         }
         lines.push("  }.");
+    }
+
+    if (savedDrawing.isRule) {
+        const roots = savedDrawing.layers.filter(l => l.parentId === null);
+        if (roots.length !== 1) {
+            throw new Error(`Consistency Check Failed: Rule drawing '${savedDrawing.name}' must have exactly one root layer.`);
+        }
+        const root = roots[0];
+        const rootRecord = model.recordNames.get(root.id);
+        if (!rootRecord || !emittedLayers.has(root.id)) {
+            throw new Error(`Consistency Check Failed: The root layer of rule drawing '${savedDrawing.name}' has no emitted record.`);
+        }
+
+        const rootChildren = savedDrawing.layers.filter(l => l.parentId === root.id);
+        const conclusion = rootChildren.find(child => {
+            const childrenOfChild = savedDrawing.layers.filter(l => l.parentId === child.id);
+            return childrenOfChild.length === 0;
+        });
+        if (!conclusion) {
+            throw new Error(`Consistency Check Failed: Rule drawing '${savedDrawing.name}' has no conclusion layer.`);
+        }
+        const conclusionRecord = model.recordNames.get(conclusion.id);
+        if (!conclusionRecord || !emittedLayers.has(conclusion.id)) {
+            throw new Error(`Consistency Check Failed: The conclusion layer of rule drawing '${savedDrawing.name}' has no emitted record.`);
+        }
+
+        const premiseLayers = rootChildren.filter(child => child !== conclusion);
+        const premiseTypes: string[] = [];
+        for (const premise of premiseLayers) {
+            const premiseRecord = model.recordNames.get(premise.id);
+            const childOfPremise = savedDrawing.layers.find(l => l.parentId === premise.id);
+            if (!childOfPremise) {
+                throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' in rule drawing '${savedDrawing.name}' has no child layer.`);
+            }
+            const childRecord = model.recordNames.get(childOfPremise.id);
+            if (!premiseRecord || !emittedLayers.has(premise.id)) {
+                throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' in rule drawing '${savedDrawing.name}' has no emitted record.`);
+            }
+            if (!childRecord || !emittedLayers.has(childOfPremise.id)) {
+                throw new Error(`Consistency Check Failed: Child layer '${childOfPremise.name}' of premise layer '${premise.name}' has no emitted record.`);
+            }
+            premiseTypes.push(`(forall (premise : ${premiseRecord} p), ${childRecord} premise)`);
+        }
+
+        const head = `forall (p : ${rootRecord}),`;
+        lines.push("");
+        if (premiseTypes.length === 0) {
+            lines.push(`  Definition rule : Type := ${head} ${conclusionRecord} p.`);
+        } else {
+            lines.push(`  Definition rule : Type :=`);
+            lines.push(`    ${head}`);
+            for (const pt of premiseTypes) {
+                lines.push(`    ${pt} ->`);
+            }
+            lines.push(`    ${conclusionRecord} p.`);
+        }
     }
 
     return lines;
@@ -486,12 +546,19 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
             registry.reserve(def.name);
         }
         registry.reserve("Equality");
+        if (drawing.isRule) {
+            registry.reserve("rule");
+        }
         const moduleName = registry.unique(sanitizeIdent(drawing.name || "Drawing"));
         lines.push("");
         lines.push(`  (* ${drawing.name.replace(/\*\)/g, "* )")} *)`);
         lines.push(`  Module ${moduleName}.`);
         lines.push(...exportDrawing(drawing, sortStore, registry));
         lines.push(`  End ${moduleName}.`);
+        if (drawing.isRule) {
+            const ruleParam = registry.unique(`${moduleName}_rule`);
+            lines.push(`  Parameter ${ruleParam} : ${moduleName}.rule.`);
+        }
     }
 
     return lines.join("\n") + "\n";
