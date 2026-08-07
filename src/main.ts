@@ -1,5 +1,6 @@
 import * as d3 from 'd3';
-import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, findSecondOrderRuleApplications, applyFirstOrderRule, applySecondOrderRule, type SortDefinition } from './index';
+import { SortStore, Drawing, Artefact, EqualityArtefact, Layer, DrawingStore, findRuleApplications, findFirstOrderRuleApplications, findSecondOrderRuleApplications, applyFirstOrderRule, applySecondOrderRule, type SortDefinition, type SavedDrawing } from './index';
+import { exportDrawingsToRocq } from './rocq_export';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 
 // 1. Initialize the Sort Store
@@ -1961,6 +1962,39 @@ if (exportDrawingsBtn) {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(`Error exporting drawings:\n${(err as Error).message}`);
+        }
+    });
+}
+
+// Rocq Export Button Listener
+const exportRocqBtn = document.getElementById("export-rocq-btn");
+if (exportRocqBtn) {
+    exportRocqBtn.addEventListener("click", () => {
+        const selectedNames = getSelectedDrawingNames();
+
+        if (selectedNames.length === 0) {
+            alert("Select at least one drawing to export.");
+            return;
+        }
+        try {
+            const drawings = selectedNames
+                .map(name => drawingStore.getDrawing(name))
+                .filter((d): d is SavedDrawing => !!d);
+            if (drawings.length === 0) {
+                alert("Error exporting drawings:\nNo drawings found in the store.");
+                return;
+            }
+            const code = exportDrawingsToRocq(drawings, sortStore);
+            navigator.clipboard
+                .writeText(code)
+                .then(() => {
+                    alert(`Rocq code for ${drawings.length} drawing(s) copied to clipboard.`);
+                })
+                .catch(() => {
+                    alert("Error exporting drawings:\nClipboard access failed.");
+                });
         } catch (err) {
             alert(`Error exporting drawings:\n${(err as Error).message}`);
         }
