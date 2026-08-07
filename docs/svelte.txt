@@ -1,0 +1,22 @@
+Let us discuss the option svelte + d3 imperative. Any benefit? 
+7:59 AM
++ Thought: 20.1s
+Yes — and for this codebase specifically, the benefit is substantial. It attacks the actual pain point (the 2,932-line main.ts) while leaving the two things you've been protecting — d3's full expressiveness and the sort-script contract — completely untouched.
+What you gain
+1. The UI chrome becomes declarative — this is the real win.
+Most of main.ts is manual DOM: createElement, innerHTML string concat, and a re-render-everything cascade (renderMenu + renderInspector + renderLayersTree + renderRuleApplications + updateCanvas) after every single action. The state is a sprawl of module-level mutables: inspectedArtefact, draftArtefact, mergeMode, mergeFirst/SecondArtefact, mergeHoverArtefact, dependencyPickingFor, activePositionPicker, layerProvability. Svelte turns all of this into component state + reactive derived state. The layers tree, inspector forms, rules panel, and drawing store — which are exactly the shape of Svelte components — collapse by roughly an order of magnitude.
+2. The canvas stays exactly as it is today.
+src/index.ts has no d3 import; the model is already framework-free. The d3 selection lives only in main.ts (#canvas) and inside sort drawFunctions. With the hybrid, neither changes one line:
+- drawing.draw(d3Sel) inside a Svelte action or $effect
+- full redraw per change (selectAll("*").remove() + draw), identical to today
+- every d3 feature remains available forever — measurement, node(), future zoom/brush/drag. Your "maybe one day I'll need more d3" concern is moot by construction.
+3. Svelte is the best-fit framework for this workload.
+No virtual DOM, compiles away, tiny runtime, fine-grained updates — panels re-render locally instead of full innerHTML wipes. It pairs cleanly with Vite (current setup) via @sveltejs/vite-plugin-svelte. React/Vue would work, but Svelte adds the least overhead for this imperative-in-the-middle architecture.
+What it costs / the honest caveats
+- The model is not reactive. Drawing/artefacts/layers are mutated in place; Svelte won't track those mutations. You need one explicit invalidation: a writable store bumped after each model mutation, which drives both the panel re-renders and the d3 redraw effect. This is the single most important design decision in the migration — keep one mutation path.
+- Two sync sources. The model renders twice (d3 canvas + Svelte panels). They must agree; the store invalidation is what keeps them in sync. Redundant but simple.
+- The canvas interactions stay imperative. Position picking (svgContext.on("click"), the global activePositionPicker), merge-mode hover opacity, focus dimming, draft preview — Svelte holds their state now, but the canvas manipulation remains manual d3 inside effects. Svelte helps half; the other half is still hand-written.
+- It's real work. Most of main.ts + most of index.html become Svelte components; the quirky interactions (merge picking, rule-app hover, provability badges, import/export flows) all need re-homing. Not trivial, but mechanical.
+The decision in one line
+The hybrid gives you all the maintainability payoff on the chrome, zero risk on the canvas and sort contract. Its only structural limitation is that canvas interactions stay imperative — which is fine as long as those aren't your growing pain point. If you ever decide the canvas interactions themselves need to become declarative, that's the point where the trace/recorder path becomes worth revisiting.
+Do you want me to sketch the concrete Svelte architecture (root component, panel components, the d3-island action, and the store-invalidation pattern) as a plan — or keep weighing this against the trace and drop-d3 options first?
