@@ -1,9 +1,11 @@
+import type { D3Context } from './types';
+
 export interface SortDefinition {
     name: string;
     dependencies: Record<string, string>;
     attributes: Record<string, string>;
-    drawFunction: (data: any, context: any) => any; // Now returns the element
-    initContext?: (context: any) => void;
+    drawFunction: (data: any, context: D3Context) => D3Context | null; // Now returns the element
+    initContext?: (context: D3Context) => void;
 }
 
 export class Layer {
@@ -41,8 +43,8 @@ export class SortStore {
         name: string,
         dependencies: Record<string, string>,
         attributes: Record<string, string>,
-        drawFunction: (data: any, context: any) => any, // Ensure this returns any
-        initContext?: (context: any) => void
+        drawFunction: (data: any, context: D3Context) => D3Context | null,
+        initContext?: (context: D3Context) => void
     ): this {
         // Consistency check: all dependencies must be already defined sorts, unless it's a flag
         for (const [depKey, depSortName] of Object.entries(dependencies)) {
@@ -84,15 +86,22 @@ export type FlagRef = { __flag: true; layerId: string };
 
 export type ArtefactDependency = Artefact | boolean | FlagRef;
 
+/**
+ * A dependency after FlagRefs have been normalized by `Drawing.newArtefact`
+ * into a `true` boolean plus a `flagLayers` entry. This is what
+ * `Artefact.dependencies` actually holds at runtime.
+ */
+export type ResolvedDependency = Artefact | boolean;
+
 export class Artefact {
-    public svgElement: any = null; // Store the rendered SVG node
+    public svgElement: D3Context | null = null; // Store the rendered SVG element
     public flagLayers: Record<string, string> = {};
 
     constructor(
         public sortName: string,
-        public dependencies: Record<string, Artefact | boolean>,
+        public dependencies: Record<string, ResolvedDependency>,
         public data: Record<string, any>,
-        protected drawFunction: (data: any, context: any) => any,
+        protected drawFunction: (data: any, context: D3Context) => D3Context | null,
         public layerId: string = "root"
     ) {}
 
@@ -110,7 +119,7 @@ export class Artefact {
         return layers;
     }
 
-    getResolvedData(isLayerVisible?: (layerId: string) => boolean): any {
+    getResolvedData(isLayerVisible?: (layerId: string) => boolean): Record<string, any> {
         const result = { ...this.data };
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
             if (typeof depArtefact === "boolean") {
@@ -139,7 +148,7 @@ export class Artefact {
         return result;
     }
 
-    draw(context: any, isLayerVisible?: (layerId: string) => boolean): void {
+    draw(context: D3Context, isLayerVisible?: (layerId: string) => boolean): void {
         this.svgElement = this.drawFunction(this.getResolvedData(isLayerVisible), context);
     }
 }
@@ -152,7 +161,7 @@ export class EqualityArtefact extends Artefact {
         data: Record<string, any> = {},
         layerId: string = "root"
     ) {
-        const deps: Record<string, Artefact | boolean> = {};
+        const deps: Record<string, ResolvedDependency> = {};
         children.forEach((child, idx) => {
             deps[`${idx}`] = child;
         });
@@ -162,7 +171,7 @@ export class EqualityArtefact extends Artefact {
 
     public setChildren(newChildren: Artefact[]): void {
         this.children = [...newChildren];
-        const newDeps: Record<string, Artefact | boolean> = {};
+        const newDeps: Record<string, ResolvedDependency> = {};
         this.children.forEach((child, idx) => {
             newDeps[`${idx}`] = child;
         });
@@ -863,8 +872,8 @@ export class Drawing {
         return artefact;
     }
 
-    private isFlagRef(value: any): value is FlagRef {
-        return typeof value === "object" && value !== null && (value as FlagRef).__flag === true && typeof value.layerId === "string";
+    private isFlagRef(value: unknown): value is FlagRef {
+        return typeof value === "object" && value !== null && (value as FlagRef).__flag === true && typeof (value as FlagRef).layerId === "string";
     }
 
     private validateFlagLayer(flagLayerId: string, artefactLayerId: string, flagKey: string): void {
@@ -878,7 +887,7 @@ export class Drawing {
         }
     }
 
-    draw(context: any): void {
+    draw(context: D3Context): void {
         // 1. Initialize context for all defined sorts (e.g., for SVG defs/markers)
         for (const sortDef of this.sortStore.getAllSorts()) {
             if (sortDef.initContext) {
@@ -1358,8 +1367,8 @@ export class DrawingStore {
         return JSON.stringify({ drawings }, null, 2);
     }
 
-    private static parseImportJSON(jsonString: string): any {
-        let parsed: any;
+    private static parseImportJSON(jsonString: string): unknown {
+        let parsed: unknown;
         try {
             parsed = JSON.parse(jsonString);
         } catch (err) {
@@ -1368,34 +1377,35 @@ export class DrawingStore {
         return parsed;
     }
 
-    private static validateAndBuildDrawing(parsed: any): SavedDrawing {
+    private static validateAndBuildDrawing(parsed: unknown): SavedDrawing {
         if (!parsed || typeof parsed !== "object") {
             throw new Error("Consistency Check Failed: Invalid JSON structure for drawing.");
         }
+        const p = parsed as Record<string, unknown>;
 
-        if (!parsed.name || typeof parsed.name !== "string" || !parsed.name.trim()) {
+        if (!p.name || typeof p.name !== "string" || !p.name.trim()) {
             throw new Error("Consistency Check Failed: Missing or invalid 'name' attribute in imported drawing.");
         }
 
-        if (!Array.isArray(parsed.layers)) {
+        if (!Array.isArray(p.layers)) {
             throw new Error("Consistency Check Failed: Missing or invalid 'layers' array in imported drawing.");
         }
 
-        if (!Array.isArray(parsed.artefacts)) {
+        if (!Array.isArray(p.artefacts)) {
             throw new Error("Consistency Check Failed: Missing or invalid 'artefacts' array in imported drawing.");
         }
 
-        const trimmedName = parsed.name.trim();
+        const trimmedName = p.name.trim();
 
         // Validate layer structures
-        for (const layer of parsed.layers) {
+        for (const layer of p.layers) {
             if (!layer || typeof layer.id !== "string" || typeof layer.name !== "string") {
                 throw new Error("Consistency Check Failed: Invalid layer structure in imported drawing.");
             }
         }
 
         // Validate artefact structures
-        for (const art of parsed.artefacts) {
+        for (const art of p.artefacts) {
             if (!art || typeof art.id !== "string" || typeof art.sortName !== "string" || typeof art.layerId !== "string" || !art.dependencies || typeof art.dependencies !== "object" || !art.data || typeof art.data !== "object") {
                 throw new Error("Consistency Check Failed: Invalid artefact structure in imported drawing.");
             }
@@ -1404,10 +1414,10 @@ export class DrawingStore {
             }
         }
 
-        const markedAsRule = !!parsed.isRule;
+        const markedAsRule = !!p.isRule;
 
         if (markedAsRule) {
-            const check = checkRuleStructure(parsed.layers);
+            const check = checkRuleStructure(p.layers);
             if (!check.isRule) {
                 throw new Error(`Consistency Check Failed: Imported drawing '${trimmedName}' is marked as a rule but does not satisfy rule conditions: ${check.reason}`);
             }
@@ -1415,10 +1425,10 @@ export class DrawingStore {
 
         return {
             name: trimmedName,
-            layers: parsed.layers,
-            artefacts: parsed.artefacts,
+            layers: p.layers,
+            artefacts: p.artefacts,
             isRule: markedAsRule,
-            isFirstOrder: markedAsRule && DrawingStore.firstOrderFromLayers(parsed.layers)
+            isFirstOrder: markedAsRule && DrawingStore.firstOrderFromLayers(p.layers)
         };
     }
 
@@ -1433,7 +1443,7 @@ export class DrawingStore {
         return `${requestedName} (${i})`;
     }
 
-    private storeImportedDrawing(parsed: any): { drawing: SavedDrawing; requestedName: string; renamed: boolean } {
+    private storeImportedDrawing(parsed: unknown): { drawing: SavedDrawing; requestedName: string; renamed: boolean } {
         const built = DrawingStore.validateAndBuildDrawing(parsed);
         const requestedName = built.name;
         const actualName = this.uniqueName(requestedName);
@@ -1449,11 +1459,12 @@ export class DrawingStore {
 
     public importDrawingsJSON(jsonString: string): { drawings: SavedDrawing[]; renames: Array<{ requested: string; actual: string }> } {
         const parsed = DrawingStore.parseImportJSON(jsonString);
+        const parsedRecord = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
 
-        if (parsed && typeof parsed === "object" && Array.isArray(parsed.drawings)) {
+        if (parsedRecord && Array.isArray(parsedRecord.drawings)) {
             const drawings: SavedDrawing[] = [];
             const renames: Array<{ requested: string; actual: string }> = [];
-            for (const item of parsed.drawings) {
+            for (const item of parsedRecord.drawings) {
                 const result = this.storeImportedDrawing(item);
                 drawings.push(result.drawing);
                 if (result.renamed) {

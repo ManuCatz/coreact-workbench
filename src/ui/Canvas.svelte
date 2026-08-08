@@ -3,6 +3,7 @@
     import { get } from 'svelte/store';
     import * as d3 from 'd3';
     import { Artefact } from '../index';
+    import type { D3Context } from '../types';
     import {
         drawing,
         sortStore,
@@ -122,7 +123,7 @@
                 draft.layerId
             );
             tempArt.flagLayers = { ...draft.flagLayers };
-            tempArt.draw(svgContext!);
+            tempArt.draw(svgContext! as unknown as D3Context);
             if (tempArt.svgElement) {
                 tempArt.svgElement.attr('opacity', 0.7);
             }
@@ -134,7 +135,7 @@
     function redraw(): void {
         if (!svgContext) return;
         svgContext.selectAll('*').remove();
-        drawing.draw(svgContext);
+        drawing.draw(svgContext as unknown as D3Context);
         drawDraftPreview();
     }
 

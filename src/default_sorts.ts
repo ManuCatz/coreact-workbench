@@ -1,4 +1,5 @@
 declare const sortStore: import('./index').SortStore;
+import type { D3Context } from './types';
 
 {
     sortStore
@@ -6,7 +7,7 @@ declare const sortStore: import('./index').SortStore;
             "Vertex",
             {},
             { position: "position" },
-            (data: any, context: import('d3').Selection<import('d3').BaseType, unknown, HTMLElement, any>) => {
+            (data: any, context: D3Context) => {
                 // Draw a vertex (circle) at data.position
                 const group = context.append("g")
                     .attr("transform", `translate(${data.position[0]}, ${data.position[1]})`);
@@ -34,7 +35,7 @@ declare const sortStore: import('./index').SortStore;
             "Edge",
             { source: "Vertex", target: "Vertex", mono: "flag" }, // Dependencies + flag
             { width: "number", bend: "number" },
-            (data: any, context: import('d3').Selection<import('d3').BaseType, unknown, HTMLElement, any>) => {
+            (data: any, context: D3Context) => {
                 const srcPos = data.source.position;
                 const tgtPos = data.target.position;
                 const bend = typeof data.bend === "number" ? data.bend : 0;
@@ -91,11 +92,11 @@ declare const sortStore: import('./index').SortStore;
 
                 return lineGroup; // Return the line group
             },
-            (context: import('d3').Selection<import('d3').BaseType, unknown, HTMLElement, any>) => {
+            (context: D3Context) => {
                 // initContext: Set up SVG Defs for Arrowhead Markers
-                let defs = context.select("defs") as any;
+                let defs = context.select<SVGDefsElement>("defs");
                 if (defs.empty()) {
-                    defs = context.append("defs") as any;
+                    defs = context.append("defs");
                 }
 
                 // Standard arrowhead
@@ -129,7 +130,7 @@ declare const sortStore: import('./index').SortStore;
             "Pullback",
             { p1: "Edge", p2: "Edge", q1: "Edge", q2: "Edge" },
             {},
-            (data: any, context: import('d3').Selection<import('d3').BaseType, unknown, HTMLElement, any>) => {
+            (data: any, context: D3Context) => {
                 // Assume p1 and p2 share the pullback source vertex
                 const V = data.p1.source.position;
                 const T1 = data.p1.target.position;
@@ -163,19 +164,19 @@ declare const sortStore: import('./index').SortStore;
                 const p3x = V[0] + ux1 * (offset + size) + ux2 * offset;
                 const p3y = V[1] + uy1 * (offset + size) + uy2 * offset;
 
-                return context.append("path")
+                return (context.append("path")
                     .attr("d", `M ${p1x},${p1y} L ${p2x},${p2y} L ${p3x},${p3y}`)
                     .attr("fill", "none")
                     .attr("stroke", "#333")
                     .attr("stroke-width", 2)
-                    .attr("stroke-linejoin", "miter");
+                    .attr("stroke-linejoin", "miter")) as unknown as D3Context;
             }
         )
         .newSort(
             "Triangle",
             { "1": "Edge", "2": "Edge", o: "Edge" },
             {},
-            (data: any, context: import('d3').Selection<import('d3').BaseType, unknown, HTMLElement, any>) => {
+            (data: any, context: D3Context) => {
                 // A triangle is composed of three edges: "1", "2", and "o".
                 // Draw it like a 2-cell: a double arrow from the target of edge
                 // "1" to the middle of edge "o".
@@ -233,11 +234,11 @@ declare const sortStore: import('./index').SortStore;
 
                 return group;
             },
-            (context: import('d3').Selection<import('d3').BaseType, unknown, HTMLElement, any>) => {
+            (context: D3Context) => {
                 // initContext: Set up SVG Defs for the 2-cell Arrowhead Marker
-                let defs = context.select("defs") as any;
+                let defs = context.select<SVGDefsElement>("defs");
                 if (defs.empty()) {
-                    defs = context.append("defs") as any;
+                    defs = context.append("defs");
                 }
 
                 defs.append("marker")

@@ -2,7 +2,8 @@ import * as d3 from 'd3';
 import { Drawing, EqualityArtefact, findRuleApplications, findFirstOrderRuleApplications, findSecondOrderRuleApplications, applyFirstOrderRule, applySecondOrderRule, type Artefact } from './index';
 import defaultSortsCode from '../public/default_sorts.js?raw';
 import { sortStore, drawing, drawingStore, refresh } from './ui/store';
-(globalThis as any).sortStore = sortStore;
+const globalScope = globalThis as unknown as { sortStore: typeof sortStore };
+globalScope.sortStore = sortStore;
 new Function('sortStore', 'd3', defaultSortsCode)(sortStore, d3);
 
 // 2. Set up Layer Tree hierarchy for Demo
@@ -92,7 +93,7 @@ try {
 }
 
 try {
-    drawing.newArtefact('Edge', { source: v0, target: v1, mono: 'yes' as any }, { width: 4, bend: 0 });
+    drawing.newArtefact('Edge', { source: v0, target: v1, mono: 'yes' as unknown as boolean }, { width: 4, bend: 0 });
 } catch (e) {
     console.error('Caught expected error for bad flag type:', (e as Error).message);
 }
@@ -169,7 +170,7 @@ try {
 
 // Error: Different sorts
 try {
-    drawing.newEqualityArtefact([v0, p1 as any], 'root');
+    drawing.newEqualityArtefact([v0, p1], 'root');
 } catch (e) {
     console.error('Caught expected error for different sorts in equality:', (e as Error).message);
 }
