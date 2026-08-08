@@ -88,7 +88,7 @@
                 title="Start or stop Rocq recording for the active drawing"
                 onclick={toggleRocqRecording}
             >
-                {rocqRecordingActive ? 'Stop recording' : 'Rocq recording'}
+                {$rocqRecordingActive ? 'Stop recording' : 'Rocq recording'}
             </button>
             <button class="layer-btn" title="Save current drawing" onclick={saveActiveDrawing}>Save</button>
             <button
