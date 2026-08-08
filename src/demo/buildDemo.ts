@@ -39,6 +39,7 @@ function logExpectedError(e: unknown): void {
 
 export function buildDemo(ctx: DemoContext): DemoContext {
     const { sortStore, drawing, drawingStore } = ctx;
+    registerDefaultSorts(sortStore);
 
     // 2. Set up Layer Tree hierarchy for Demo
     // Root Layer ("root") is automatically initialized by Drawing
