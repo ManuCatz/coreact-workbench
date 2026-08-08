@@ -9,10 +9,12 @@
 ## Tech Stack
 
 - **Language**: TypeScript (`^5.0.0`) targeting `ES2020`
-- **Build Tool / Bundler**: Vite (`^5.0.0`)
+- **Build Tool / Bundler**: Vite (`^5.0.0`) with `@sveltejs/vite-plugin-svelte` (`^3.1.2`)
+- **UI Framework**: Svelte 5 (`^5.0.0`) using **classic stores** (`writable`/`derived`/`get` from `svelte/store`) — NOT runes
 - **Core Dependencies**:
   - `d3` (`^7.8.0`) & `@types/d3`: SVG DOM manipulation & drawing context
   - `puppeteer` (`^24.43.1`): Headless automation / log capture
+  - `svelte-check` (`^4.0.0`): Type checking for `.svelte` files
 - **Module Format**: ES Modules (`"type": "module"`)
 - **Type Checking**: Strict TypeScript configuration (`strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`)
 
@@ -24,19 +26,30 @@
   ```bash
   npm install
   ```
+- **Type-check the whole project (TS + Svelte)**:
+  ```bash
+  npm run check
+  ```
+  *(Runs `svelte-check --tsconfig ./tsconfig.json`)*
 - **Start development server**:
   ```bash
   npm run dev
   ```
-- **Build default sorts script**:
+- **Build**:
   ```bash
-  npm run build:sorts
+  npm run build
   ```
-  *(Compiles `src/default_sorts.ts` into `public/default_sorts.js` for dynamic execution)*
+  *(Vite production build; type-checking happens via `npm run check`, not in the build script)*
 - **Preview production build**:
   ```bash
   npm run preview
   ```
+- **Smoke test (headless)**:
+  ```bash
+  npm run dev  # serves on http://localhost:5175
+  node capture_logs.js
+  ```
+  *(`capture_logs.js` loads the page, waits ~3s, and prints console + page errors)*
 
 ---
 
@@ -46,16 +59,46 @@
 .
 ├── src/
 │   ├── index.ts           # Core library classes: Layer, SortStore, Artefact, Drawing
-│   ├── main.ts            # Web application entrypoint, UI controls, inspector & layer management
+│   ├── demo.ts            # Demo diagram + consistency tests (runs on startup)
+│   ├── main.ts            # Bootstrap: runs demo, loads active drawing, mounts App.svelte
+│   ├── ui/
+│   │   ├── store.ts       # All reactive stores + UI actions (single shared module)
+│   │   ├── App.svelte     # App layout: menu, canvas, inspector, rules panel
+│   │   ├── Canvas.svelte  # SVG canvas; imperative D3 redraw on store version bump
+│   │   ├── LayersTree.svelte, LayerNode.svelte    # Layer tree UI
+│   │   ├── ArtefactMenu.svelte, ArtefactNode.svelte # Artefact tree UI
+│   │   ├── DrawingsStorePanel.svelte  # Save/load/import/export drawings
+│   │   ├── RuleApplications.svelte    # Applyable rules list + Apply buttons
+│   │   ├── Inspector.svelte           # Merge / draft / inspect views
+│   │   └── app.css         # Global styles
 │   ├── default_sorts.ts   # Definition of default sorts (Vertex, Edge, Pullback)
-│   └── vite-env.d.ts      # Vite TypeScript environment definitions
+│   └── vite-env.d.ts      # Vite + Svelte TypeScript environment definitions
 ├── public/
 │   ├── default_sorts.js   # Pre-compiled JS default sorts script loaded dynamically at runtime
 │   └── index.js           # Public entry script
-├── index.html             # UI container with sidebar controls, SVG canvas, and inspector panel
+├── index.html             # Minimal mount container (#app) + main.ts entry script
 ├── tsconfig.json          # TypeScript compiler configuration
+├── svelte.config.js       # Svelte preprocessor config (vitePreprocess)
+├── vite.config.js         # Vite config (Svelte plugin, base: './')
 └── package.json           # Package definition and build scripts
 ```
+
+### UI Architecture (Svelte)
+
+1. **`src/ui/store.ts`**:
+   - Single module owning the core singletons (`sortStore`, `drawing`, `drawingStore`, `rocqRecorder`) plus every shared reactive store (`version`, `inspectedArtefact`, `draftArtefact`, `mergeMode`, `positionPicker`, etc.) and all UI action functions.
+   - The core `Drawing`/`DrawingStore` classes are plain mutable objects with no reactivity. After any mutation of their state, call `refresh()` (bumps the `version` store) so every derived store recomputes and all subscribed components re-render.
+   - Never mutate core objects outside this module; components call store actions and read stores.
+
+2. **`Canvas.svelte`**:
+   - Owns the `<svg id="canvas">` imperatively. On mount (and on every `version` bump) it clears all children and calls `drawing.draw(svgContext)` with D3; no Svelte template nodes exist inside the SVG.
+   - Handles overlay opacity (merge mode, rule hover, menu hover, inspected artefact) and the position-picker click handler.
+
+3. **Component ↔ store communication**:
+   - Panels (layers tree, artefact menu, inspector, drawing store, rules) read from derived stores and dispatch through store actions. They never reach into core classes directly except through `store.ts` helpers.
+
+4. **Startup (`src/main.ts`)**:
+   - Imports `./demo` (runs the demo diagram + consistency tests, saving 'Rule Drawing Demo' to the store), loads that drawing as active, then mounts `App.svelte` into `#app`.
 
 ### Core Architecture
 
