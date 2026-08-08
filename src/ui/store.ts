@@ -470,7 +470,8 @@ export function loadDrawingByName(name: string): boolean {
 }
 
 export function getSelectedDrawingNames(): string[] {
-    return Array.from(get(exportSelection));
+    const existing = new Set(drawingStore.getAllDrawings().map(d => d.name));
+    return Array.from(get(exportSelection)).filter(name => existing.has(name));
 }
 
 export function downloadDrawingsJson(names: string[]): void {
@@ -722,12 +723,20 @@ export function deleteSelectedDrawings(names: string[]): void {
     if (!confirm(`Are you sure you want to delete ${names.length} drawing(s): ${names.map(n => `'${n}'`).join(', ')}?`)) {
         return;
     }
+    const deleted = new Set(names);
     for (const name of names) {
         if (name === get(activeDrawingName)) {
             activeDrawingName.set(null);
         }
         drawingStore.deleteDrawing(name);
     }
+    exportSelection.update(sel => {
+        const next = new Set(sel);
+        for (const name of deleted) {
+            next.delete(name);
+        }
+        return next;
+    });
     refresh();
 }
 
@@ -737,6 +746,15 @@ export function renameDrawingName(oldName: string, newName: string): void {
         if (oldName === get(activeDrawingName)) {
             activeDrawingName.set(newName);
         }
+        exportSelection.update(sel => {
+            if (!sel.has(oldName)) {
+                return sel;
+            }
+            const next = new Set(sel);
+            next.delete(oldName);
+            next.add(newName);
+            return next;
+        });
         refresh();
     } catch (err) {
         alert((err as Error).message);
