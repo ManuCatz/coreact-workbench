@@ -61,6 +61,7 @@
         {@const savedRule = entry.savedRule}
         {@const labels = matchLabels(entry, app)}
         <div
+            role="group"
             class:first-order={savedRule.isFirstOrder}
             class:second-order={!savedRule.isFirstOrder}
             class="rule-app-row"

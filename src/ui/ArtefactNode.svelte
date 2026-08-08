@@ -124,15 +124,37 @@
     >
         <span
             class="toggle-icon"
+            role="button"
+            tabindex="0"
+            aria-label={expanded ? 'Collapse children' : 'Expand children'}
             onclick={(e) => {
                 e.stopPropagation();
                 expanded = !expanded;
             }}
+            onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    expanded = !expanded;
+                }
+            }}
         ></span>
-        <span class="node-label" onclick={(e) => {
-            e.stopPropagation();
-            onHeaderClick();
-        }}>{prefix}{baseLabel}{equalitySuffix}{flagSuffix}</span>
+        <span
+            class="node-label"
+            role="button"
+            tabindex="0"
+            onclick={(e) => {
+                e.stopPropagation();
+                onHeaderClick();
+            }}
+            onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onHeaderClick();
+                }
+            }}
+        >{prefix}{baseLabel}{equalitySuffix}{flagSuffix}</span>
         {#if artefact.sortName === 'Equality' || layerBadgeText}
             <span class="layer-badge" style={!isLayerVis ? 'background-color: #f5b7b1; color: #78281f;' : ''}>
                 {layerBadgeText}
@@ -141,10 +163,24 @@
         {#if provablyEqualCandidate}
             <span class="eq-badge" title="Provably equal (via equality artefacts)">≡</span>
         {/if}
-        <span class="remove-btn" title={isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : 'Remove artefact'} onclick={(e) => {
-            e.stopPropagation();
-            onRemove();
-        }}>×</span>
+        <span
+            class="remove-btn"
+            role="button"
+            tabindex="0"
+            title={isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : 'Remove artefact'}
+            aria-label={isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : 'Remove artefact'}
+            onclick={(e) => {
+                e.stopPropagation();
+                onRemove();
+            }}
+            onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRemove();
+                }
+            }}
+        >×</span>
     </div>
 
     {#if artefact && artefact.data}
@@ -160,10 +196,20 @@
                             <span class="node-label">{flagKey}</span>
                             <span
                                 class="remove-btn"
+                                role="button"
+                                tabindex="0"
                                 title={`Remove tag '${flagKey}'`}
+                                aria-label={`Remove tag '${flagKey}'`}
                                 onclick={(e) => {
                                     e.stopPropagation();
                                     removeArtefactNode(artefact, null, flagKey);
+                                }}
+                                onkeydown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        removeArtefactNode(artefact, null, flagKey);
+                                    }
                                 }}
                             >×</span>
                         </div>

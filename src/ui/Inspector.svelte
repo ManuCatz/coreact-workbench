@@ -133,8 +133,9 @@
 
     <div>
         <div class="form-group">
-            <label>1st Artefact (to be removed)</label>
+            <label for="merge-first-btn">1st Artefact (to be removed)</label>
             <button
+                id="merge-first-btn"
                 type="button"
                 class="pick-dep-btn {$mergePickingFor === 'first' ? 'active' : ''}"
                 onclick={toggleMergeFirst}
@@ -150,14 +151,14 @@
         </div>
 
         <div class="form-group">
-            <label>2nd Artefact (datafields kept)</label>
+            <label for="merge-second-select">2nd Artefact (datafields kept)</label>
             {#if $mergeFirstArtefact}
                 {#if orderedCandidates.length === 0}
                     <div style="font-size: 0.8rem; color: #e74c3c; font-style: italic; margin-top: 4px;">
                         No other artefacts with matching dependencies found.
                     </div>
                 {:else}
-                    <select value={secondSelectIndex >= 0 ? String(secondSelectIndex) : ''} onchange={onMergeSecondSelect}>
+                    <select id="merge-second-select" value={secondSelectIndex >= 0 ? String(secondSelectIndex) : ''} onchange={onMergeSecondSelect}>
                         <option value="">-- Select 2nd Artefact --</option>
                         {#if provablyEqualCandidates.length > 0}
                             <optgroup label="≡ Provably equal (via equality artefacts)">
@@ -225,8 +226,9 @@
 
         <div>
             <div class="form-group">
-                <label>Layer</label>
+                <label for="draft-layer-select">Layer</label>
                 <select
+                    id="draft-layer-select"
                     value={draft.layerId}
                     onchange={(e) => setDraftLayer((e.currentTarget as HTMLSelectElement).value)}
                 >
@@ -253,8 +255,9 @@
                 {#each nonFlagDeps as [depKey, expectedSort]}
                     {@const picked = draft.dependencies[depKey]}
                     <div class="form-group">
-                        <label>{depKey} ({expectedSort})</label>
+                        <label for="draft-dep-{depKey}">{depKey} ({expectedSort})</label>
                         <button
+                            id="draft-dep-{depKey}"
                             type="button"
                             class="pick-dep-btn {$dependencyPickingFor === depKey ? 'active' : ''}"
                             onclick={() => toggleDepPicking(depKey)}
@@ -273,8 +276,9 @@
 
             <h4 style="margin: 15px 0 5px 0; font-size: 0.95rem; color: #444;">Data Attributes</h4>
             <div class="form-group">
-                <label>Label</label>
+                <label for="draft-label-input">Label</label>
                 <input
+                    id="draft-label-input"
                     type="text"
                     value={draft.data.label || ''}
                     onchange={(e) => setDraftDataField('label', (e.currentTarget as HTMLInputElement).value)}
@@ -284,8 +288,9 @@
             {#each Object.entries(draftSortDef.attributes) as [attrName, expectedType]}
                 {#if expectedType === 'string' || expectedType === 'number'}
                     <div class="form-group">
-                        <label>{attrName} ({expectedType})</label>
+                        <label for="draft-attr-{attrName}">{attrName} ({expectedType})</label>
                         <input
+                            id="draft-attr-{attrName}"
                             type={expectedType === 'number' ? 'number' : 'text'}
                             step={expectedType === 'number' ? 'any' : undefined}
                             value={draft.data[attrName] !== undefined ? draft.data[attrName] : ''}
@@ -303,23 +308,26 @@
                 {:else if expectedType === 'boolean'}
                     <div class="form-group checkbox">
                         <input
+                            id="draft-bool-{attrName}"
                             type="checkbox"
                             checked={!!draft.data[attrName]}
                             onchange={(e) => setDraftDataField(attrName, (e.currentTarget as HTMLInputElement).checked)}
                         />
-                        <label>{attrName}</label>
+                        <label for="draft-bool-{attrName}">{attrName}</label>
                     </div>
                 {:else if expectedType === 'position'}
                     <div class="form-group">
-                        <label>{attrName} (x, y)</label>
+                        <label for="draft-pos-{attrName}-x">{attrName} (x, y)</label>
                         <div class="position">
                             <input
+                                id="draft-pos-{attrName}-x"
                                 type="number"
                                 step="any"
                                 value={draft.data[attrName] ? draft.data[attrName][0] : 0}
                                 onchange={(e) => updateDraftPosition(attrName, parseFloat((e.currentTarget as HTMLInputElement).value), 0)}
                             />
                             <input
+                                id="draft-pos-{attrName}-y"
                                 type="number"
                                 step="any"
                                 value={draft.data[attrName] ? draft.data[attrName][1] : 0}
@@ -344,11 +352,12 @@
                     {@const flagLayerId = draft.flagLayers[flagKey] ?? draft.layerId}
                     <div class="form-group checkbox flag-row">
                         <input
+                            id="draft-flag-{flagKey}"
                             type="checkbox"
                             checked={flagActive}
                             onchange={(e) => toggleDraftFlag(flagKey, (e.currentTarget as HTMLInputElement).checked)}
                         />
-                        <label>{flagKey}</label>
+                        <label for="draft-flag-{flagKey}">{flagKey}</label>
                         {#if flagActive}
                             <select
                                 class="flag-layer-select"
@@ -391,8 +400,9 @@
 
         <div>
             <div class="form-group">
-                <label>Layer</label>
+                <label for="inspect-layer-select">Layer</label>
                 <select
+                    id="inspect-layer-select"
                     value={art.layerId}
                     onchange={(e) => {
                         const newLayerId = (e.currentTarget as HTMLSelectElement).value;
@@ -410,8 +420,9 @@
             </div>
 
             <div class="form-group">
-                <label>Label</label>
+                <label for="inspect-label-input">Label</label>
                 <input
+                    id="inspect-label-input"
                     type="text"
                     value={art.data.label || ''}
                     placeholder={art.sortName === 'Equality'
@@ -424,8 +435,9 @@
             {#each Object.entries(artSortDef.attributes) as [attrName, expectedType]}
                 {#if expectedType === 'string' || expectedType === 'number'}
                     <div class="form-group">
-                        <label>{attrName} ({expectedType})</label>
+                        <label for="inspect-attr-{attrName}">{attrName} ({expectedType})</label>
                         <input
+                            id="inspect-attr-{attrName}"
                             type={expectedType === 'number' ? 'number' : 'text'}
                             step={expectedType === 'number' ? 'any' : undefined}
                             value={art.data[attrName] !== undefined ? art.data[attrName] : ''}
@@ -443,23 +455,26 @@
                 {:else if expectedType === 'boolean'}
                     <div class="form-group checkbox">
                         <input
+                            id="inspect-bool-{attrName}"
                             type="checkbox"
                             checked={!!art.data[attrName]}
                             onchange={(e) => setArtefactDataField(art, attrName, (e.currentTarget as HTMLInputElement).checked)}
                         />
-                        <label>{attrName}</label>
+                        <label for="inspect-bool-{attrName}">{attrName}</label>
                     </div>
                 {:else if expectedType === 'position'}
                     <div class="form-group">
-                        <label>{attrName} (x, y)</label>
+                        <label for="inspect-pos-{attrName}-x">{attrName} (x, y)</label>
                         <div class="position">
                             <input
+                                id="inspect-pos-{attrName}-x"
                                 type="number"
                                 step="any"
                                 value={art.data[attrName] ? art.data[attrName][0] : 0}
                                 onchange={(e) => updateInspectPosition(art, attrName, parseFloat((e.currentTarget as HTMLInputElement).value), 0)}
                             />
                             <input
+                                id="inspect-pos-{attrName}-y"
                                 type="number"
                                 step="any"
                                 value={art.data[attrName] ? art.data[attrName][1] : 0}
@@ -484,11 +499,12 @@
                     {@const flagLayerId = art.getFlagLayer(flagKey)}
                     <div class="form-group checkbox flag-row">
                         <input
+                            id="inspect-flag-{flagKey}"
                             type="checkbox"
                             checked={flagActive}
                             onchange={(e) => setArtefactFlag(art, flagKey, (e.currentTarget as HTMLInputElement).checked)}
                         />
-                        <label>{flagKey}</label>
+                        <label for="inspect-flag-{flagKey}">{flagKey}</label>
                         {#if flagActive}
                             <select
                                 class="flag-layer-select"
