@@ -6,7 +6,7 @@
     import DrawingsStorePanel from './DrawingsStorePanel.svelte';
     import Inspector from './Inspector.svelte';
     import RuleApplications from './RuleApplications.svelte';
-    import { loadSortScript, clearAll, mergeMode, startMergeMode, cancelMergeMode, inspectedArtefact, refresh } from './store';
+    import { loadSortScript, clearAll, mergeMode, startMergeMode, cancelMergeMode, inspectedArtefact } from './store';
 
     let scriptUpload: HTMLInputElement;
 
@@ -79,7 +79,6 @@
     <div id="rules-panel">
         <div class="rules-header">
             <h2>Applyable Rules</h2>
-            <button class="layer-btn" id="refresh-rules-btn" title="Refresh applyable rules list" onclick={() => refresh()}>Refresh</button>
         </div>
         <div id="rules-content">
             <RuleApplications />
