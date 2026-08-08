@@ -1,1 +1,12 @@
 node_modules/
+dist/
+*.log
+dev_server.log
+.opencode/
+.vscode/
+session-*.md
+opencode.md
+extract_menu.cjs
+fix_*
+get_logs.js
+rewrite.py
