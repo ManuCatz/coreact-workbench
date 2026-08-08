@@ -24,7 +24,6 @@ export class RocqRecorder {
     }
 
     public start(drawing: Drawing, activeDrawingName: string, sortStore: SortStore): void {
-        this.active = true;
         this.drawingName = activeDrawingName;
         this.lines = [];
         this.usedAdmit = false;
@@ -58,6 +57,8 @@ export class RocqRecorder {
             this.lines.push("intro p.");
             this.lines.push("destruct p.");
         }
+
+        this.active = true;
     }
 
     public recordRuleApply(

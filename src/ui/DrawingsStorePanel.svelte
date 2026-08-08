@@ -80,9 +80,9 @@
                 onchange={(e) => setExportSelectionAll((e.currentTarget as HTMLInputElement).checked)}
             />
             <button class="layer-btn new-btn" title="Start a new blank drawing" onclick={newDrawing}>New</button>
-            <button class="layer-btn" title="Import one or more drawings from a JSON file" onclick={() => importInput.click()}>Import</button>
-            <button class="layer-btn" title="Export the checked drawings to a JSON file" onclick={onExportJson}>Export</button>
-            <button class="layer-btn" title="Copy the checked drawings to the clipboard as Rocq code" onclick={onRocqExport}>Rocq</button>
+            <button class="layer-btn import-btn" title="Import one or more drawings from a JSON file" onclick={() => importInput.click()}>Import</button>
+            <button class="layer-btn export-btn" title="Export the checked drawings to a JSON file" onclick={onExportJson}>Export</button>
+            <button class="layer-btn rocq-btn" title="Copy the checked drawings to the clipboard as Rocq code" onclick={onRocqExport}>Rocq</button>
             <button
                 class="layer-btn rocq-rec-btn"
                 title="Start or stop Rocq recording for the active drawing"
@@ -90,9 +90,9 @@
             >
                 {$rocqRecordingActive ? 'Stop recording' : 'Rocq recording'}
             </button>
-            <button class="layer-btn" title="Save current drawing" onclick={saveActiveDrawing}>Save</button>
+            <button class="layer-btn save-btn" title="Save current drawing" onclick={saveActiveDrawing}>Save</button>
             <button
-                class="layer-btn"
+                class="layer-btn delete-btn"
                 title="Delete the checked drawings"
                 onclick={() => deleteSelectedDrawings(getSelectedDrawingNames())}
             >Delete</button>
@@ -167,7 +167,7 @@
                     <button class="layer-btn" title={savedDrawing.isRule ? 'Remove the explicit rule marking from this drawing' : 'Explicitly mark this drawing as a rule (must satisfy rule conditions)'} onclick={() => onToggleRule(savedDrawing)}>
                         {savedDrawing.isRule ? 'Unmark Rule' : 'Mark Rule'}
                     </button>
-                    <button class="layer-btn delete-btn" title="Delete drawing '{savedDrawing.name}'" onclick={() => onDelete(savedDrawing)}>×</button>
+                    <button class="layer-btn row-delete-btn" title="Delete drawing '{savedDrawing.name}'" onclick={() => onDelete(savedDrawing)}>×</button>
                 </div>
             </div>
         {/each}
