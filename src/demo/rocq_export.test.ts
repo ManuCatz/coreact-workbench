@@ -5,7 +5,7 @@ import { Drawing, DrawingStore, findFirstOrderRuleApplications, applyFirstOrderR
 import { newSortStore, makeVertex, makeEdge, makeDrawing, buildComposableHost, buildFlagInChildLayerRule, buildFlagOnlyConclusionRule, buildSecondOrderRule } from './helpers';
 
 describe('rocq export', () => {
-    it('exports sorts and a sigma notation preamble without records or modules', () => {
+    it('exports sorts and a sigma notation preamble without records, modules, or tuple notation', () => {
         const sortStore = newSortStore();
         const drawing = new Drawing(sortStore);
         const v0 = makeVertex(drawing, 'a');
@@ -20,10 +20,9 @@ describe('rocq export', () => {
         expect(code).toContain('sigT');
         expect(code).toContain('Parameter Vertex : Type.');
         expect(code).toContain('Parameter Edge : Vertex -> Vertex -> Type.');
-        expect(code).toContain('Notation "( x , .. , y , p )"');
         expect(code).toContain('Ltac subst_all :=');
         expect(code).toContain('Tactic Notation "subst_all_in"');
-        expect(code).toContain('existT');
+        expect(code).not.toContain('existT');
         expect(code).not.toContain('Module MainDrawing');
         expect(code).not.toContain('Record');
     });
@@ -164,8 +163,11 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, { artefacts: result.hostArtefacts, created: result.hostCreated }, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('assert (Hpremise1 : forall (pe : Edge a b), Edge a b) by admit.');
+        expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_rule : forall (a b : Vertex), forall (pe : Edge a b), Edge a b.');
+        expect(script).toContain('Admitted.');
+        expect(script).toContain('assert (Hpremise1 : forall (pe : Edge a b), Edge a b) by eauto using MainDrawing___SecondOrderRule___Premise_rule.');
         expect(script).toContain('assert (ce := @SecondOrderRule_rule a b Hpremise1).');
+        expect(script).not.toContain('by admit');
         expect(script).not.toContain('destruct');
         expect(script).not.toContain('; subst_all.');
     });
@@ -246,6 +248,7 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, { artefacts: result.hostArtefacts, created: result.hostCreated }, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
+        expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_A_rule : forall (hv0 hv1 hv2 : Vertex)(he1 : Edge hv0 hv1)(he2 : Edge hv1 hv2), forall (sdv : Vertex), Edge sdv hv1.');
         expect(script).toContain('assert (sh := @SecondOrderRule_rule hv0 hv1 hv2 he1 he2 Hpremise1); destruct sh as (sh & mono_he1)');
         expect(script).not.toContain('as ()');
     });

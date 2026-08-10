@@ -57,10 +57,6 @@ export const SIGMA_NOTATION = `Notation "'Σ' x .. y , p" :=
   (sigT (fun x => .. (sigT (fun y => p)) ..))
   (at level 200, x binder, y binder, right associativity).`;
 
-export const TUPLE_NOTATION = `(* (a, b, c) : Σ (a : A)(b : B), C a b *)
-Notation "( x , .. , y , p )" :=
-  (existT _ x .. (existT _ y p) ..).`;
-
 export const SUBST_ALL_TACTIC = `Ltac subst_all :=
   repeat (match goal with 
      | e : ?x = ?y |- _ => subst x; set (x := y)
@@ -622,8 +618,6 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
 
     const lines: string[] = [];
     lines.push(SIGMA_NOTATION);
-    lines.push("");
-    lines.push(TUPLE_NOTATION);
     lines.push("");
     lines.push(SUBST_ALL_TACTIC);
     lines.push("");

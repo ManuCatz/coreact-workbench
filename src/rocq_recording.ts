@@ -1,5 +1,5 @@
 import { Artefact, Drawing, DrawingStore, SortStore } from "./index";
-import { drawingExportNames, ruleTypeInfo, newExportRegistry, renderForallChain, renderSigma } from "./rocq_export";
+import { drawingExportNames, ruleTypeInfo, newExportRegistry, renderForallChain, renderSigma, sanitizeIdent } from "./rocq_export";
 import type { LayerElement } from "./rocq_export";
 
 function artefactToDataId(drawing: Drawing, art: Artefact): string {
@@ -14,37 +14,59 @@ function escapeRegExp(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function substituteRuleNames(s: string, rootNameToHost: Map<string, string>): string {
+    // Substitute rule root names for their matched host names in two passes so
+    // a host name can never be re-matched by another substitution.
+    const substitutions = [...rootNameToHost.entries()].sort(([a], [b]) => b.length - a.length);
+    let out = s;
+    const tokens: string[] = [];
+    substitutions.forEach(([ruleName], i) => {
+        const token = `\u0001${i}\u0001`;
+        tokens.push(rootNameToHost.get(ruleName)!);
+        out = out.replace(new RegExp(`\\b${escapeRegExp(ruleName)}\\b`, "g"), token);
+    });
+    tokens.forEach((hostName, i) => {
+        out = out.split(`\u0001${i}\u0001`).join(hostName);
+    });
+    return out;
+}
+
+function mapElements(elements: LayerElement[], rootNameToHost: Map<string, string>): LayerElement[] {
+    return elements.map(el => ({ ...el, type: substituteRuleNames(el.type, rootNameToHost) }));
+}
+
+function mapElementsToHost(elements: LayerElement[], rootNameToHost: Map<string, string>): LayerElement[] {
+    return elements.map(el => ({
+        ...el,
+        name: el.kind === "equation" ? el.name : rootNameToHost.get(el.name) ?? el.name,
+        type: substituteRuleNames(el.type, rootNameToHost)
+    }));
+}
+
 function renderPremiseType(
     premiseElements: LayerElement[],
     childElements: LayerElement[],
     rootNameToHost: Map<string, string>
 ): string {
-    // Substitute rule root names for their matched host names in two passes so
-    // a host name can never be re-matched by another substitution.
-    const substitutions = [...rootNameToHost.entries()].sort(([a], [b]) => b.length - a.length);
-    const substitute = (s: string): string => {
-        let out = s;
-        const tokens: string[] = [];
-        substitutions.forEach(([ruleName], i) => {
-            const token = `\u0001${i}\u0001`;
-            tokens.push(rootNameToHost.get(ruleName)!);
-            out = out.replace(new RegExp(`\\b${escapeRegExp(ruleName)}\\b`, "g"), token);
-        });
-        tokens.forEach((hostName, i) => {
-            out = out.split(`\u0001${i}\u0001`).join(hostName);
-        });
-        return out;
-    };
-    const mapElements = (elements: LayerElement[]): LayerElement[] =>
-        elements.map(el => ({ ...el, type: substitute(el.type) }));
-    return renderForallChain(mapElements(premiseElements), renderSigma(mapElements(childElements)));
+    return renderForallChain(mapElements(premiseElements, rootNameToHost), renderSigma(mapElements(childElements, rootNameToHost)));
+}
+
+function renderPremiseLemmaType(
+    rootElements: LayerElement[],
+    premiseElements: LayerElement[],
+    childElements: LayerElement[],
+    rootNameToHost: Map<string, string>
+): string {
+    const premiseType = renderPremiseType(premiseElements, childElements, rootNameToHost);
+    return renderForallChain(mapElementsToHost(rootElements, rootNameToHost), premiseType);
 }
 
 export class RocqRecorder {
     private active: boolean = false;
     private drawingName: string | null = null;
     private lines: string[] = [];
-    private usedAdmit: boolean = false;
+    private prelude: string[] = [];
+    private preludeLemmas: Set<string> = new Set();
 
     public isActive(): boolean {
         return this.active;
@@ -57,7 +79,8 @@ export class RocqRecorder {
     public start(drawing: Drawing, activeDrawingName: string, sortStore: SortStore): void {
         this.drawingName = activeDrawingName;
         this.lines = [];
-        this.usedAdmit = false;
+        this.prelude = [];
+        this.preludeLemmas = new Set();
 
         const savedDrawing = DrawingStore.drawingToSavedDrawing(activeDrawingName, drawing);
         const exportNames = drawingExportNames(savedDrawing, sortStore);
@@ -207,19 +230,36 @@ export class RocqRecorder {
         const assertName = conclusionHostNames[0] ?? "h";
         const conclusionArity = ruleInfo.conclusionElements.length;
 
-        // Second-order rules: assert each premise as an admitted hypothesis whose
-        // type is the rule's premise type re-rendered with the host's names.
+        // Second-order rules: assert each premise via `eauto using` the derived
+        // drawing's rule. That rule is emitted as a preliminary Lemma (whose proof
+        // is admitted) whose type is the premise re-rendered with the host's names.
         const rootNameToHost = new Map<string, string>();
         ruleInfo.rootElements.forEach((el, i) => rootNameToHost.set(el.name, tupleValues[i]));
+
+        // The premise layers in the same order as ruleInfo.premiseLayers: the
+        // root's children that have a child layer of their own.
+        const premiseLayerDefs = rootChildren.filter(child => {
+            const childrenOfChild = savedRule.layers.filter(l => l.parentId === child.id);
+            return childrenOfChild.length > 0;
+        });
+        if (premiseLayerDefs.length !== ruleInfo.premiseLayers.length) {
+            throw new Error(`Consistency Check Failed: Premise layer mismatch in rule '${savedRuleName}'.`);
+        }
 
         const premiseProofNames: string[] = [];
         for (let k = 0; k < ruleInfo.premiseLayers.length; k++) {
             const premise = ruleInfo.premiseLayers[k];
             const premiseType = renderPremiseType(premise.premiseElements, premise.childElements, rootNameToHost);
             const proofName = `Hpremise${k + 1}`;
-            this.lines.push(`assert (${proofName} : ${premiseType}) by admit.`);
+            const derivedName = `${hostActiveName} > ${savedRuleName} > ${premiseLayerDefs[k].name}`;
+            const lemmaName = `${sanitizeIdent(derivedName)}_rule`;
+            if (!this.preludeLemmas.has(lemmaName)) {
+                this.preludeLemmas.add(lemmaName);
+                this.prelude.push(`Lemma ${lemmaName} : ${renderPremiseLemmaType(ruleInfo.rootElements, premise.premiseElements, premise.childElements, rootNameToHost)}.`);
+                this.prelude.push("Admitted.");
+            }
+            this.lines.push(`assert (${proofName} : ${premiseType}) by eauto using ${lemmaName}.`);
             premiseProofNames.push(proofName);
-            this.usedAdmit = true;
         }
 
         const conclusionHasEquality = ruleInfo.conclusionElements.some(el => el.kind === "equation");
@@ -266,9 +306,10 @@ export class RocqRecorder {
             throw new Error("Consistency Check Failed: Rocq recording is not active.");
         }
         this.active = false;
-        const finalLine = this.usedAdmit ? "Admitted." : "Qed.";
-        const script = [...this.lines, finalLine].join("\n") + "\n";
+        const script = [...this.prelude, ...this.lines, "Qed."].join("\n") + "\n";
         this.lines = [];
+        this.prelude = [];
+        this.preludeLemmas = new Set();
         this.drawingName = null;
         return script;
     }
