@@ -1810,7 +1810,7 @@ function computeConclusionFlags(rule: Drawing, ruleRoot: Layer, childLayer: Laye
     return result;
 }
 
-function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): { artefacts: Artefact[]; conclusionFlags: Map<Artefact, Set<string>> } {
+function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): { artefacts: Artefact[]; conclusionFlags: Map<Artefact, Set<string>>; created: Map<Artefact, Artefact> } {
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {
@@ -1919,14 +1919,16 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
 
         const uniqueChildren = Array.from(new Set(resolvedChildren));
         if (uniqueChildren.length >= 2) {
-            result.push(host.addEqualityArtefactUnchecked(uniqueChildren, hostRootId, JSON.parse(JSON.stringify(eq.data))));
+            const newEq = host.addEqualityArtefactUnchecked(uniqueChildren, hostRootId, JSON.parse(JSON.stringify(eq.data)));
+            created.set(eq, newEq);
+            result.push(newEq);
         }
     }
 
-    return { artefacts: result, conclusionFlags };
+    return { artefacts: result, conclusionFlags, created };
 }
 
-export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): Artefact[] {
+export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): { artefacts: Artefact[]; created: Map<Artefact, Artefact> } {
     if (!rule.isRule) {
         throw new Error("Consistency Check Failed: Drawing is not marked as a rule; a drawing must be explicitly marked as a rule before it can be applied.");
     }
@@ -1947,7 +1949,7 @@ export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: R
     }
     const childLayer = childLayers[0];
 
-    return applyRuleConclusion(rule, host, application, childLayer).artefacts;
+    return applyRuleConclusion(rule, host, application, childLayer);
 }
 
 export interface DerivedRule {
@@ -1962,6 +1964,7 @@ export interface SecondOrderRuleNames {
 
 export interface SecondOrderRuleApplicationResult {
     hostArtefacts: Artefact[];
+    hostCreated: Map<Artefact, Artefact>;
     derivedRules: DerivedRule[];
 }
 
@@ -1998,7 +2001,7 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
     const premiseLayers = childLayers.filter(child => child !== conclusion);
 
     // Step 1: apply the rule as if it were first-order, ignoring the other child layers of depth 2
-    const { artefacts: hostArtefacts, conclusionFlags } = applyRuleConclusion(rule, host, application, conclusion);
+    const { artefacts: hostArtefacts, conclusionFlags, created } = applyRuleConclusion(rule, host, application, conclusion);
     // The conclusion is merged into the host root; it must NOT be carried over
     // into the derived drawings created for each premise layer.
     const conclusionCreated = new Set<Artefact>(hostArtefacts);
@@ -2262,5 +2265,5 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
         derivedRules.push({ name: derivedName, drawing: derived });
     }
 
-    return { hostArtefacts, derivedRules };
+    return { hostArtefacts, hostCreated: created, derivedRules };
 }

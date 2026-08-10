@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { exportDrawingsToRocq } from '../rocq_export';
 import { RocqRecorder } from '../rocq_recording';
 import { Drawing, DrawingStore, findFirstOrderRuleApplications, applyFirstOrderRule, findSecondOrderRuleApplications, applySecondOrderRule } from '../index';
-import { newSortStore, makeVertex, makeEdge } from './helpers';
+import { newSortStore, makeVertex, makeEdge, makeDrawing, buildComposableHost, buildFlagInChildLayerRule, buildFlagOnlyConclusionRule, buildSecondOrderRule } from './helpers';
 
 describe('rocq export', () => {
     it('exports sorts and a sigma notation preamble without records or modules', () => {
@@ -161,7 +161,7 @@ describe('rocq export', () => {
         const apps = findSecondOrderRuleApplications(rule, host);
         expect(apps.length).toBeGreaterThan(0);
         const result = applySecondOrderRule(rule, host, apps[0], { hostName: 'MainDrawing', ruleName: 'SecondOrderRule' });
-        recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, result.hostArtefacts, 'MainDrawing', sortStore);
+        recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, { artefacts: result.hostArtefacts, created: result.hostCreated }, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
         expect(script).toContain('assert (Hpremise1 : forall (pe : Edge a b), Edge a b) by admit.');
@@ -204,5 +204,78 @@ describe('rocq export', () => {
 
         expect(script).toContain('assert (f := @ArgOrderRule_rule a b c eq_refl mw mono_mw).');
         expect(script).not.toContain('@ArgOrderRule_rule a b c mw mono_mw eq_refl');
+    });
+
+    it('destructs a first-order conclusion combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const host = buildComposableHost().host;
+        store.saveDrawing('MainDrawing', host);
+
+        const rule = buildFlagInChildLayerRule();
+        store.saveDrawing('FlagInChildLayer', rule);
+
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'MainDrawing', sortStore);
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+        const created = applyFirstOrderRule(rule, host, apps[0]);
+        recorder.recordRuleApply(rule, 'FlagInChildLayer', apps[0], host, created, 'MainDrawing', sortStore);
+        const script = recorder.stop();
+
+        expect(script).toContain('destruct (@FlagInChildLayer_rule hv0 hv1 hv2 he1 he2) as (fe3 & mono_he2)');
+        expect(script).not.toContain('as ()');
+    });
+
+    it('destructs a second-order conclusion combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const host = buildComposableHost().host;
+        store.saveDrawing('MainDrawing', host);
+
+        const rule = buildSecondOrderRule();
+        store.saveDrawing('SecondOrderRule', rule);
+
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'MainDrawing', sortStore);
+        const apps = findSecondOrderRuleApplications(rule, host);
+        expect(apps.length).toBeGreaterThan(0);
+        const result = applySecondOrderRule(rule, host, apps[0], { hostName: 'MainDrawing', ruleName: 'SecondOrderRule' });
+        recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, { artefacts: result.hostArtefacts, created: result.hostCreated }, 'MainDrawing', sortStore);
+        const script = recorder.stop();
+
+        expect(script).toContain('assert (sh := @SecondOrderRule_rule hv0 hv1 hv2 he1 he2 Hpremise1); destruct sh as (sh & mono_he1)');
+        expect(script).not.toContain('as ()');
+    });
+
+    it('asserts a conclusion that is only a flag already present in a host child layer, without destruct', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'hv0');
+        const hv1 = makeVertex(host, 'hv1');
+        const hv2 = makeVertex(host, 'hv2');
+        makeEdge(host, 'he1', hv0, hv1);
+        host.addLayer('mono-layer', 'Mono Layer', 'root');
+        host.newArtefact('Edge', { source: hv1, target: hv2, mono: { __flag: true, layerId: 'mono-layer' } }, { width: 2, bend: 0, label: 'he2' }, 'root');
+        store.saveDrawing('MainDrawing', host);
+
+        const rule = buildFlagOnlyConclusionRule();
+        store.saveDrawing('FlagOnlyRule', rule);
+
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'MainDrawing', sortStore);
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+        const created = applyFirstOrderRule(rule, host, apps[0]);
+        recorder.recordRuleApply(rule, 'FlagOnlyRule', apps[0], host, created, 'MainDrawing', sortStore);
+        const script = recorder.stop();
+
+        expect(script).toContain('assert (mono_he2 := @FlagOnlyRule_rule hv0 hv1 hv2 he1 he2)');
+        expect(script).not.toContain('destruct');
+        expect(script).not.toContain('as ()');
     });
 });

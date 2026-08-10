@@ -84,7 +84,7 @@ export class RocqRecorder {
         savedRuleName: string,
         application: { matchedArtefacts: Map<Artefact, Artefact> },
         hostDrawing: Drawing,
-        createdArtefacts: Artefact[],
+        applicationResult: { artefacts: Artefact[]; created: Map<Artefact, Artefact> },
         hostActiveName: string,
         sortStore: SortStore
     ): void {
@@ -162,16 +162,50 @@ export class RocqRecorder {
 
         const argsStr = tupleValues.join(" ");
 
-        const newNames = createdArtefacts.map(art => {
-            const newId = artefactToDataId(hostDrawing, art);
-            const newName = art.sortName === "Equality"
-                ? hostNames.equalityFieldNames.get(newId) ?? hostNames.fieldNames.get(newId)
-                : hostNames.fieldNames.get(newId);
-            if (!newName) {
-                throw new Error(`Consistency Check Failed: No field name assigned for new host artefact '${newId}'.`);
+        // Names for the conclusion binders, in the exported conclusion's
+        // (dependency-ordered) order, always sourced from the host layer:
+        // created host copies for artefacts/equalities and host flag field
+        // names for flags.
+        const ruleArtById = new Map<string, Artefact>();
+        for (const ruleArt of ruleDrawing.getArtefacts()) {
+            ruleArtById.set(artefactToDataId(ruleDrawing, ruleArt), ruleArt);
+        }
+
+        const conclusionHostNames = ruleInfo.conclusionElements.map(el => {
+            const ruleArt = el.artefactId ? ruleArtById.get(el.artefactId) : undefined;
+            if (el.kind === "flag") {
+                let hostId = matchMap.get(el.artefactId ?? "");
+                if (!hostId && ruleArt) {
+                    const hostCopy = applicationResult.created.get(ruleArt);
+                    if (hostCopy) {
+                        hostId = artefactToDataId(hostDrawing, hostCopy);
+                    }
+                }
+                const hostFlagName = hostId ? hostNames.flagFieldNames.get(`${hostId}::${el.flagKey}`) : undefined;
+                if (!hostFlagName) {
+                    throw new Error(`Consistency Check Failed: No host flag field name for '${el.flagKey}' on '${el.name}' in rule '${savedRuleName}'.`);
+                }
+                return hostFlagName;
             }
-            return newName;
+            if (!ruleArt) {
+                throw new Error(`Consistency Check Failed: Conclusion element '${el.name}' in rule '${savedRuleName}' has no artefact id.`);
+            }
+            const hostCopy = applicationResult.created.get(ruleArt);
+            if (!hostCopy) {
+                throw new Error(`Consistency Check Failed: No created host artefact for conclusion element '${el.name}' in rule '${savedRuleName}'.`);
+            }
+            const hostId = artefactToDataId(hostDrawing, hostCopy);
+            const hostFieldName = el.kind === "equation"
+                ? hostNames.equalityFieldNames.get(hostId) ?? hostNames.fieldNames.get(hostId)
+                : hostNames.fieldNames.get(hostId);
+            if (!hostFieldName) {
+                throw new Error(`Consistency Check Failed: No field name assigned for created host artefact '${el.name}' in rule '${savedRuleName}'.`);
+            }
+            return hostFieldName;
         });
+
+        const assertName = conclusionHostNames[0] ?? "h";
+        const conclusionArity = ruleInfo.conclusionElements.length;
 
         // Second-order rules: assert each premise as an admitted hypothesis whose
         // type is the rule's premise type re-rendered with the host's names.
@@ -192,19 +226,19 @@ export class RocqRecorder {
 
         if (premiseProofNames.length > 0) {
             const fullArgsStr = [...tupleValues, ...premiseProofNames].join(" ");
-            const assertBase = `assert (${newNames[0]} := @${ruleParam} ${fullArgsStr})`;
-            if (createdArtefacts.length === 1) {
+            const assertBase = `assert (${assertName} := @${ruleParam} ${fullArgsStr})`;
+            if (conclusionArity <= 1) {
                 this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all.` : `${assertBase}.`);
             } else {
-                const destruct = `${assertBase}; destruct ${newNames[0]} as (${newNames.join(" & ")})`;
+                const destruct = `${assertBase}; destruct ${assertName} as (${conclusionHostNames.join(" & ")})`;
                 this.lines.push(conclusionHasEquality ? `${destruct}; subst_all.` : `${destruct}.`);
             }
             return;
         }
 
-        const destructBase = `destruct (@${ruleParam} ${argsStr}) as (${newNames.join(" & ")})`;
-        const assertBase = `assert (${newNames[0]} := @${ruleParam} ${argsStr})`;
-        if (createdArtefacts.length === 1) {
+        const destructBase = `destruct (@${ruleParam} ${argsStr}) as (${conclusionHostNames.join(" & ")})`;
+        const assertBase = `assert (${assertName} := @${ruleParam} ${argsStr})`;
+        if (conclusionArity <= 1) {
             this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all.` : `${assertBase}.`);
         } else {
             this.lines.push(conclusionHasEquality ? `${destructBase}; subst_all.` : `${destructBase}.`);

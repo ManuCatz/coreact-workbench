@@ -340,7 +340,7 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     drawingStore.loadDrawing('FlagInChildLayer', tempFlagApplyRule);
     const flagApplyApps = findFirstOrderRuleApplications(tempFlagApplyRule, hostNoMono);
     if (flagApplyApps.length > 0) {
-        const flagCreated = applyFirstOrderRule(tempFlagApplyRule, hostNoMono, flagApplyApps[0]);
+        const flagCreated = applyFirstOrderRule(tempFlagApplyRule, hostNoMono, flagApplyApps[0]).artefacts;
         const monoEdges = hostNoMono.getArtefacts().filter(a => a.dependencies['mono'] === true);
         console.log('Applied FlagInChildLayer: created artefacts:', flagCreated.length,
             '- host mono edges (expected 1 hfe2@root):',
@@ -414,7 +414,7 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     const applyApps = findFirstOrderRuleApplications(tempApplyRule, applyHost);
     console.log('ChildEqApply first-order applications:', applyApps.length);
     if (applyApps.length > 0) {
-        const applied = applyFirstOrderRule(tempApplyRule, applyHost, applyApps[0]);
+        const applied = applyFirstOrderRule(tempApplyRule, applyHost, applyApps[0]).artefacts;
         const addedEqualities = applied.filter(a => a.sortName === 'Equality');
         console.log('Applied ChildEqApply; added artefacts:', applied.length, '- equalities added:', addedEqualities.length);
         for (const eq of addedEqualities) {

@@ -963,14 +963,15 @@ export function applyRuleAt(savedRuleName: string, appIndex: number): void {
     const { savedRule, ruleDrawing, applications } = entry;
     const app = applications[appIndex];
     const activeName = get(activeDrawingName) ?? 'Unsaved Drawing';
-    let createdArtefacts: Artefact[] = [];
+    let applicationResult: { artefacts: Artefact[]; created: Map<Artefact, Artefact> } | null = null;
     try {
         if (savedRule.isFirstOrder) {
-            createdArtefacts = applyFirstOrderRule(ruleDrawing, drawing, app);
-            console.log(`Applied '${savedRule.name}': added ${createdArtefacts.length} artefact(s).`);
+            const result = applyFirstOrderRule(ruleDrawing, drawing, app);
+            applicationResult = result;
+            console.log(`Applied '${savedRule.name}': added ${result.artefacts.length} artefact(s).`);
         } else {
             const result = applySecondOrderRule(ruleDrawing, drawing, app, { hostName: activeName, ruleName: savedRule.name });
-            createdArtefacts = result.hostArtefacts;
+            applicationResult = { artefacts: result.hostArtefacts, created: result.hostCreated };
             console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} drawing(s).`);
             const createdNames: string[] = [];
             for (const derived of result.derivedRules) {
@@ -986,7 +987,9 @@ export function applyRuleAt(savedRuleName: string, appIndex: number): void {
             }
             alert(`Applied rule '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s) and created ${createdNames.length} derived drawing(s):\n- ${createdNames.join('\n- ')}`);
         }
-        rocqRecorder.recordRuleApply(ruleDrawing, savedRule.name, app, drawing, createdArtefacts, activeName, sortStore);
+        if (applicationResult) {
+            rocqRecorder.recordRuleApply(ruleDrawing, savedRule.name, app, drawing, applicationResult, activeName, sortStore);
+        }
         refresh();
     } catch (err) {
         alert(`Error applying rule '${savedRule.name}':\n${(err as Error).message}`);

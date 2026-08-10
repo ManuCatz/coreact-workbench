@@ -70,6 +70,18 @@ export function buildFlagInChildLayerRule(): Drawing {
     return drawing;
 }
 
+export function buildFlagOnlyConclusionRule(): Drawing {
+    const drawing = makeDrawing();
+    const fv0 = makeVertex(drawing, 'fv0');
+    const fv1 = makeVertex(drawing, 'fv1');
+    const fv2 = makeVertex(drawing, 'fv2');
+    makeEdge(drawing, 'fe1', fv0, fv1);
+    drawing.addLayer('flag-conclusion', 'Flag Conclusion', 'root');
+    drawing.newArtefact('Edge', { source: fv1, target: fv2, mono: { __flag: true, layerId: 'flag-conclusion' } }, { width: 2, bend: 0, label: 'fe2' }, 'root');
+    drawing.setIsRule(true);
+    return drawing;
+}
+
 export function buildFlagInRootRule(): Drawing {
     const drawing = makeDrawing();
     const rfv0 = makeVertex(drawing, 'rfv0');

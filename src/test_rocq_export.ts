@@ -137,7 +137,7 @@ if (fooApps.length > 0) {
 const soApps = findSecondOrderRuleApplications(rule2, mainDrawing);
 if (soApps.length > 0) {
     const soResult = applySecondOrderRule(rule2, mainDrawing, soApps[0], { hostName: "MainDrawing", ruleName: "SecondOrderRule" });
-    recorder.recordRuleApply(rule2, "SecondOrderRule", soApps[0], mainDrawing, soResult.hostArtefacts, "MainDrawing", sortStore);
+    recorder.recordRuleApply(rule2, "SecondOrderRule", soApps[0], mainDrawing, { artefacts: soResult.hostArtefacts, created: soResult.hostCreated }, "MainDrawing", sortStore);
 }
 
 // Apply MonoRule (mono flag proof field in the rule root record)

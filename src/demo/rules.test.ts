@@ -85,7 +85,7 @@ describe('applying first-order rules', () => {
         const apps = findFirstOrderRuleApplications(rule, host);
         expect(apps.length).toBe(1);
 
-        const applied = applyFirstOrderRule(rule, host, apps[0]);
+        const applied = applyFirstOrderRule(rule, host, apps[0]).artefacts;
         const addedEqualities = applied.filter(a => a.sortName === 'Equality');
         expect(addedEqualities.length).toBe(2);
 
