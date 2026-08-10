@@ -460,23 +460,50 @@ function renderGroups(groups: Array<{ names: string[]; type: string }>): string 
     return groups.map(g => `(${g.names.join(" ")} : ${g.type})`).join("");
 }
 
+function nextEquationRun(elements: LayerElement[]): number {
+    for (let i = 0; i < elements.length; i++) {
+        if (elements[i].kind === "equation") {
+            let end = i;
+            while (end < elements.length && elements[end].kind === "equation") {
+                end++;
+            }
+            return end;
+        }
+    }
+    return -1;
+}
+
 export function renderForallChain(elements: LayerElement[], rest: string): string {
     if (elements.length === 0) {
         return rest;
     }
-    return `forall ${renderGroups(binderGroups(elements))}, ${rest}`;
+    const runEnd = nextEquationRun(elements);
+    if (runEnd === -1) {
+        return `forall ${renderGroups(binderGroups(elements))}, ${rest}`;
+    }
+    const prefix = elements.slice(0, runEnd);
+    const remainder = elements.slice(runEnd);
+    const wrappedRest = remainder.length === 0 ? rest : renderForallChain(remainder, rest);
+    return `forall ${renderGroups(binderGroups(prefix))}, ltac:(subst_all_in (${wrappedRest}))`;
 }
 
 export function renderSigma(elements: LayerElement[]): string {
     if (elements.length === 0) {
         return "True";
     }
+    if (elements.length === 1) {
+        return elements[0].type;
+    }
     const binders = elements.slice(0, -1);
     const body = elements[elements.length - 1].type;
-    if (binders.length === 0) {
-        return body;
+    const runEnd = nextEquationRun(binders);
+    if (runEnd === -1) {
+        return `Σ ${renderGroups(binderGroups(binders))}, ${body}`;
     }
-    return `Σ ${renderGroups(binderGroups(binders))}, ${body}`;
+    const prefix = binders.slice(0, runEnd);
+    const remainder = elements.slice(runEnd);
+    const wrappedRest = renderSigma(remainder);
+    return `Σ ${renderGroups(binderGroups(prefix))}, ltac:(subst_all_in (${wrappedRest}))`;
 }
 
 export interface PremiseInfo {

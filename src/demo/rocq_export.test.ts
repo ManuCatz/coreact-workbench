@@ -57,13 +57,13 @@ describe('rocq export', () => {
 
         expect(script).toContain('Lemma MainDrawing_rule :');
         expect(script).toContain('intros');
-        expect(script).toContain('subst_all.');
+        expect(script).toContain('repeat (intros; cbn; subst_all).');
         expect(script).toContain('MainDrawing');
         expect(script).toContain('Qed');
         expect(script).toContain('assert (f := @Foo_rule a b).');
         expect(script).toContain('repeat constructor; eassumption');
         expect(script).toContain('forall (a b : Vertex)');
-        expect(script).not.toContain('ltac:(subst_all_in');
+        expect(script).toContain('ltac:(subst_all_in (True))');
         expect(script).not.toContain('; subst_all.');
 
         const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore) + '\n' + script;
@@ -280,5 +280,39 @@ describe('rocq export', () => {
         expect(script).toContain('assert (mono_he2 := @FlagOnlyRule_rule hv0 hv1 hv2 he1 he2)');
         expect(script).not.toContain('destruct');
         expect(script).not.toContain('as ()');
+    });
+
+    it('wraps the sort sequence after a root equality run in ltac subst_all_in', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const rule = new Drawing(sortStore);
+        const rx = makeVertex(rule, 'x');
+        const ry = makeVertex(rule, 'y');
+        rule.newEqualityArtefact([rx, ry], 'root');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'f', rx, ry, 'conclusion');
+        rule.setIsRule(true);
+        store.saveDrawing('WrappedEqRule', rule);
+
+        const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
+        expect(code).toContain('Parameter WrappedEqRule_rule : forall (x y : Vertex)(eq_x_y : x = y), ltac:(subst_all_in (Edge x y)).');
+    });
+
+    it('wraps the sigma body after a conclusion equality binder in ltac subst_all_in', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const rule = new Drawing(sortStore);
+        const rx = makeVertex(rule, 'x');
+        const ry = makeVertex(rule, 'y');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        rule.newEqualityArtefact([rx, ry], 'conclusion');
+        makeEdge(rule, 'f', rx, ry, 'conclusion');
+        rule.setIsRule(true);
+        store.saveDrawing('SigmaEqRule', rule);
+
+        const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
+        expect(code).toContain('Parameter SigmaEqRule_rule : forall (x y : Vertex), Σ (eq_x_y : x = y), ltac:(subst_all_in (Edge x y)).');
     });
 });

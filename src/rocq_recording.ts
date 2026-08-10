@@ -96,8 +96,12 @@ export class RocqRecorder {
         const lemmaName = `${moduleName}_rule`;
 
         this.lines.push(`Lemma ${lemmaName} : ${info.type}.`);
-        this.lines.push("intros.");
-        this.lines.push("subst_all.");
+        if (info.rootElements.some(el => el.kind === "equation")) {
+            this.lines.push("repeat (intros; cbn; subst_all).");
+        } else {
+            this.lines.push("intros.");
+            this.lines.push("subst_all.");
+        }
 
         this.active = true;
     }
