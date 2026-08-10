@@ -186,15 +186,6 @@ export function setDraftLayer(layerId: string): void {
     refresh();
 }
 
-export function addDraftDependency(key: string, artefact: Artefact): void {
-    draftArtefact.update(d => {
-        if (d) d.dependencies[key] = artefact;
-        return d;
-    });
-    dependencyPickingFor.set(findNextUnfilledDependency(get(draftArtefact) as DraftArtefact));
-    refresh();
-}
-
 export function toggleDraftFlag(flagKey: string, checked: boolean): void {
     draftArtefact.update(d => {
         if (!d) return d;
@@ -601,13 +592,17 @@ export function pickDraftDependency(artefact: Artefact): void {
     if (!draft || !picking) return;
 
     if (draft.sortName === 'Equality') {
-        const existingItems = Object.values(draft.dependencies).filter((v): v is Artefact => typeof v !== 'boolean');
-        if (existingItems.length > 0 && existingItems[0].sortName !== artefact.sortName) {
-            alert(`Equality artefact requires all elements to be of sort '${existingItems[0].sortName}', but selected '${artefact.sortName}'.`);
-            return;
-        }
-        const nextIdx = Object.keys(draft.dependencies).length;
-        draft.dependencies[`${nextIdx}`] = artefact;
+        draftArtefact.update(d => {
+            if (!d) return d;
+            const existingItems = Object.values(d.dependencies).filter((v): v is Artefact => typeof v !== 'boolean');
+            if (existingItems.length > 0 && existingItems[0].sortName !== artefact.sortName) {
+                alert(`Equality artefact requires all elements to be of sort '${existingItems[0].sortName}', but selected '${artefact.sortName}'.`);
+                return d;
+            }
+            const nextIdx = Object.keys(d.dependencies).length;
+            d.dependencies[`${nextIdx}`] = artefact;
+            return d;
+        });
         refresh();
         return;
     }
@@ -615,8 +610,11 @@ export function pickDraftDependency(artefact: Artefact): void {
     const sortDef = sortStore.getSort(draft.sortName);
     const expectedSort = sortDef?.dependencies[picking];
     if (expectedSort && artefact.sortName === expectedSort) {
-        draft.dependencies[picking] = artefact;
-        dependencyPickingFor.set(findNextUnfilledDependency(draft));
+        draftArtefact.update(d => {
+            if (d) d.dependencies[picking] = artefact;
+            return d;
+        });
+        dependencyPickingFor.set(findNextUnfilledDependency(get(draftArtefact) as DraftArtefact));
         refresh();
     } else {
         alert(`Expected sort '${expectedSort}', but selected '${artefact.sortName}'.`);
