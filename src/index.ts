@@ -1547,7 +1547,7 @@ function findRuleApplicationsInternal(
     const results: RuleApplication[] = [];
 
     if (patternArts.length === 0) {
-        return results;
+        return [{ matchedArtefacts: new Map(), hostArtefacts: new Set() }];
     }
 
     const patternSet = new Set<Artefact>(patternArts);

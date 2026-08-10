@@ -138,6 +138,30 @@ describe('second-order rules', () => {
     });
 });
 
+describe('rules with an empty root layer', () => {
+    it('matches exactly once in any drawing and applies its conclusion', () => {
+        const rule = makeDrawing();
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        const cv0 = rule.newArtefact('Vertex', {}, { position: [0, 0], label: 'cv0' }, 'conclusion');
+        const cv1 = rule.newArtefact('Vertex', {}, { position: [1, 0], label: 'cv1' }, 'conclusion');
+        rule.newArtefact('Edge', { source: cv0, target: cv1 }, { width: 2, bend: 0, label: 'ce' }, 'conclusion');
+        rule.setIsRule(true);
+
+        const emptyHost = makeDrawing();
+        const emptyApps = findFirstOrderRuleApplications(rule, emptyHost);
+        expect(emptyApps.length).toBe(1);
+        expect(emptyApps[0].matchedArtefacts.size).toBe(0);
+        expect(emptyApps[0].hostArtefacts.size).toBe(0);
+
+        const { host } = buildComposableHost();
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+
+        const applied = applyFirstOrderRule(rule, host, apps[0]).artefacts;
+        expect(applied.some(a => a.data.label === 'ce' && a.layerId === 'root')).toBe(true);
+    });
+});
+
 describe('rule structure restrictions', () => {
     it('rejects a rule whose child of the root has 2 children', () => {
         const drawing = makeDrawing();
