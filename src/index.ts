@@ -336,11 +336,11 @@ export class Drawing {
                     }
                 }
             } else {
-                const match = parentArtefacts.find(b => this.areEqual(art, b, parentId));
+                const match = parentArtefacts.find(b => this.hasSameDependenciesUpToEquality(art, b, parentId));
                 if (!match) {
                     return {
                         provable: false,
-                        reason: `Artefact '${labelOf(art)}' (${art.sortName}) in layer '${layer.name}' has no provably equal counterpart in parent layer '${parentName}'.`
+                        reason: `Artefact '${labelOf(art)}' (${art.sortName}) in layer '${layer.name}' has no counterpart with the same dependencies (up to provable equality) in parent layer '${parentName}'.`
                     };
                 }
             }
@@ -986,6 +986,31 @@ export class Drawing {
         if (set1 !== set2) return false;
         if (!set1) return true;
         return a1.getFlagLayer(flagKey) === a2.getFlagLayer(flagKey);
+    }
+
+    private hasSameDependenciesUpToEquality(a1: Artefact, a2: Artefact, layerId: string): boolean {
+        if (a1.sortName !== a2.sortName) {
+            return false;
+        }
+
+        for (const [depKey, depVal] of Object.entries(a1.dependencies)) {
+            const otherDep = a2.dependencies[depKey];
+            if (typeof depVal === "boolean" || depVal === undefined) {
+                const set1 = depVal === true;
+                const set2 = otherDep === true;
+                if (set1 !== set2) return false;
+                if (set1 && !this.flagsMatch(a1, a2, depKey)) return false;
+            } else {
+                if (typeof otherDep !== "object" || otherDep === null || otherDep === undefined || typeof otherDep === "boolean") {
+                    return false;
+                }
+                if (depVal !== otherDep && !this.areEqual(depVal, otherDep, layerId)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     public areDependenciesEqual(a1: Artefact, a2: Artefact): boolean {

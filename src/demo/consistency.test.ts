@@ -186,4 +186,42 @@ describe('layer provability', () => {
 
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
     });
+
+    it('is provable when the parent layer has an artefact with the same dependencies', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const pv0 = makeVertex(drawing, 'pv0');
+        const pv1 = makeVertex(drawing, 'pv1');
+        makeEdge(drawing, 'pre', pv0, pv1);
+        drawing.newArtefact('Edge', { source: pv0, target: pv1 }, { width: 2, bend: 0, label: 'pce' }, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
+    });
+
+    it('is not provable when the parent layer has no artefact with the same dependencies', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const pv0 = makeVertex(drawing, 'pv0');
+        const pv1 = makeVertex(drawing, 'pv1');
+        const pv2 = makeVertex(drawing, 'pv2');
+        makeEdge(drawing, 'pre', pv0, pv1);
+        makeEdge(drawing, 'pce', pv0, pv2, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
+    });
+
+    it('is provable when dependencies are provably equal to those of a parent artefact', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const pv0 = makeVertex(drawing, 'pv0');
+        const pv1 = makeVertex(drawing, 'pv1');
+        const pw0 = makeVertex(drawing, 'pw0');
+        const pw1 = makeVertex(drawing, 'pw1');
+        makeEdge(drawing, 'pre', pw0, pw1);
+        makeEdge(drawing, 'pce', pv0, pv1, 'prov-child');
+        drawing.newEqualityArtefact([pv0, pw0], 'root');
+        drawing.newEqualityArtefact([pv1, pw1], 'root');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
+    });
 });
