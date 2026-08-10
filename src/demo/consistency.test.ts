@@ -13,17 +13,18 @@ describe('consistency checks', () => {
     it('rejects a missing dependency', () => {
         const drawing = makeDrawing();
         const v0 = makeVertex(drawing, 'v0');
-        const v1 = makeVertex(drawing, 'v1');
         expect(() =>
-            drawing.newArtefact('Edge', { source: v0, target: v1 }, { width: 4, bend: 0 })
+            drawing.newArtefact('Edge', { source: v0 }, { width: 4, bend: 0 })
         ).toThrowError(/Consistency Check Failed/);
     });
 
     it('rejects a wrong dependency type', () => {
         const drawing = makeDrawing();
         const v0 = makeVertex(drawing, 'v0');
+        const v1 = makeVertex(drawing, 'v1');
+        const e0 = makeEdge(drawing, 'e0', v0, v1);
         expect(() =>
-            drawing.newArtefact('Edge', { source: v0 }, { width: 4, bend: 0 })
+            drawing.newArtefact('Edge', { source: v0, target: e0 }, { width: 4, bend: 0 })
         ).toThrowError(/Consistency Check Failed/);
     });
 
@@ -47,10 +48,11 @@ describe('consistency checks', () => {
 
     it('rejects a flag leaving from a non-descendant layer', () => {
         const drawing = makeDrawing();
+        drawing.addLayer('layer-1', 'Child Layer 1', 'root');
         const v0 = makeVertex(drawing, 'v0');
         const v1 = makeVertex(drawing, 'v1');
         expect(() =>
-            drawing.newArtefact('Edge', { source: v0, target: v1, mono: { __flag: true, layerId: 'root' } }, { width: 4, bend: 0 })
+            drawing.newArtefact('Edge', { source: v0, target: v1, mono: { __flag: true, layerId: 'root' } }, { width: 4, bend: 0 }, 'layer-1')
         ).toThrowError(/Consistency Check Failed/);
     });
 

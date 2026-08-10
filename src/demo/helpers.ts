@@ -23,9 +23,10 @@ export function makeEdge(
     drawing: Drawing,
     label: string,
     source: ReturnType<Drawing['newArtefact']>,
-    target: ReturnType<Drawing['newArtefact']>
+    target: ReturnType<Drawing['newArtefact']>,
+    layerId: string = 'root'
 ): ReturnType<Drawing['newArtefact']> {
-    return drawing.newArtefact('Edge', { source, target }, { width: 2, bend: 0, label }, 'root');
+    return drawing.newArtefact('Edge', { source, target }, { width: 2, bend: 0, label }, layerId);
 }
 
 export interface CompRule {
@@ -41,7 +42,7 @@ export function buildComposableEdgesRule(): CompRule {
     const re1 = makeEdge(drawing, 're1', v0, v1);
     const re2 = makeEdge(drawing, 're2', v1, v2);
     drawing.addLayer('rule-pattern', 'Rule Pattern', 'root');
-    makeEdge(drawing, 're3', v0, v2);
+    makeEdge(drawing, 're3', v0, v2, 'rule-pattern');
     drawing.setIsRule(true);
     return { rule: drawing, edges: { re1, re2 } };
 }
@@ -90,7 +91,7 @@ export function buildChildEqRule(): Drawing {
     const qe1 = makeEdge(drawing, 'qe1', qv0, qv1);
     const qe2 = makeEdge(drawing, 'qe2', qv1, qv2);
     drawing.addLayer('conclusion', 'Conclusion', 'root');
-    makeEdge(drawing, 'qe3', qv0, qv2);
+    makeEdge(drawing, 'qe3', qv0, qv2, 'conclusion');
     drawing.newEqualityArtefact([qv0, qv1, qv2], 'conclusion');
     drawing.newEqualityArtefact([qe1, qe2], 'conclusion');
     drawing.setIsRule(true);

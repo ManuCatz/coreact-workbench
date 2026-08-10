@@ -53,6 +53,22 @@ export class NameRegistry {
     }
 }
 
+export const SIGMA_NOTATION = `Notation "'Σ' x .. y , p" :=
+  (sigT (fun x => .. (sigT (fun y => p)) ..))
+  (at level 200, x binder, y binder, right associativity).`;
+
+export const TUPLE_NOTATION = `(* (a, b, c) : Σ (a : A)(b : B), C a b *)
+Notation "( x , .. , y , p )" :=
+  (existT _ x .. (existT _ y p) ..).`;
+
+export const SUBST_ALL_TACTIC = `Ltac subst_all :=
+  repeat (match goal with 
+     | e : ?x = ?y |- _ => subst x; set (x := y)
+    end). `;
+
+export const SUBST_ALL_IN_TACTIC = `Tactic Notation "subst_all_in"  uconstr(B)  :=
+  subst_all;  exact B.`;
+
 function getSort(sortStore: SortStore, name: string): SortDefinition {
     const def = sortStore.getSort(name);
     if (!def) {
@@ -225,10 +241,6 @@ export function buildDrawingModel(
     return { name: savedDrawing.name, layerById, artefactById, layerOrder, ancestors, recordNames, fieldNames };
 }
 
-function effectiveAncestors(model: DrawingModel, layerId: string): string[] {
-    return (model.ancestors.get(layerId) ?? []).filter(ancId => model.recordNames.has(ancId));
-}
-
 function refFrom(model: DrawingModel, fromLayerId: string, artefactId: string): string {
     const art = model.artefactById.get(artefactId);
     if (!art) {
@@ -238,22 +250,16 @@ function refFrom(model: DrawingModel, fromLayerId: string, artefactId: string): 
     if (!fieldName) {
         throw new Error(`Consistency Check Failed: No field assigned for artefact '${artefactId}' in drawing '${model.name}'.`);
     }
-    if (art.layerId === fromLayerId) {
-        return fieldName;
+    if (art.layerId !== fromLayerId) {
+        const chain = model.ancestors.get(fromLayerId) ?? [];
+        if (!chain.includes(art.layerId)) {
+            const layerName = model.layerById.get(fromLayerId)?.name ?? fromLayerId;
+            throw new Error(
+                `Consistency Check Failed: Artefact '${labelOf(art)}' (in layer '${model.layerById.get(art.layerId)?.name ?? art.layerId}') is not in layer '${layerName}' or any of its lower ancestor layers.`
+            );
+        }
     }
-    const chain = effectiveAncestors(model, fromLayerId);
-    const pos = chain.indexOf(art.layerId);
-    if (pos === -1) {
-        const layerName = model.layerById.get(fromLayerId)?.name ?? fromLayerId;
-        throw new Error(
-            `Consistency Check Failed: Artefact '${labelOf(art)}' (in layer '${model.layerById.get(art.layerId)?.name ?? art.layerId}') is not in layer '${layerName}' or any of its lower ancestor layers.`
-        );
-    }
-    const depth = (model.ancestors.get(fromLayerId) ?? []).length;
-    const fromRoot = chain.slice(1).reverse();
-    const idx = fromRoot.indexOf(art.layerId);
-    const paramName = "g".repeat(depth - 2 - idx) + "p";
-    return `${paramName}.(${fieldName})`;
+    return fieldName;
 }
 
 function labelOf(art: ArtefactData): string {
@@ -310,6 +316,8 @@ function equalityFieldType(model: DrawingModel, art: ArtefactData): string {
 
 interface FlagField {
     layerId: string;
+    artefactId: string;
+    flagKey: string;
     name: string;
     type: string;
     depFieldNames: string[];
@@ -352,6 +360,8 @@ export function computeProofFieldNames(
             const list = flagFieldsByLayer.get(flagLayerId) ?? [];
             list.push({
                 layerId: flagLayerId,
+                artefactId: art.id,
+                flagKey,
                 name,
                 type: `${flagKey} ${refFrom(model, flagLayerId, art.id)}`,
                 depFieldNames: art.layerId === flagLayerId ? [artefactFieldName] : []
@@ -374,155 +384,235 @@ export function computeProofFieldNames(
     return { flagFieldNames, equalityFieldNames, flagFieldsByLayer };
 }
 
-function exportDrawing(
+// ---------------------------------------------------------------------------
+// Sigma-based rule types
+// ---------------------------------------------------------------------------
+
+export interface LayerElement extends FieldItem {
+    kind: "artefact" | "flag" | "equation";
+    artefactId?: string;
+    flagKey?: string;
+}
+
+function buildLayerElements(
     savedDrawing: SavedDrawing,
     sortStore: SortStore,
-    registry: NameRegistry
-): string[] {
-    const model = buildDrawingModel(savedDrawing, registry);
-    const proofNames = computeProofFieldNames(savedDrawing, sortStore, model, registry);
-    const lines: string[] = [];
+    model: DrawingModel,
+    proofNames: ProofFieldNames,
+    layerId: string
+): LayerElement[] {
+    const items: LayerElement[] = [];
+    const layerArtefacts = savedDrawing.artefacts.filter(art => art.layerId === layerId);
 
-    const flagFieldsByLayer = proofNames.flagFieldsByLayer;
-    const emittedLayers = new Set<string>();
-
-    for (const layer of model.layerOrder) {
-        const layerArtefacts = savedDrawing.artefacts.filter(art => art.layerId === layer.id);
-        const items: FieldItem[] = [];
-
-        for (const art of layerArtefacts) {
-            if (art.sortName === "Equality") {
-                const name = proofNames.equalityFieldNames.get(art.id);
-                if (!name) {
-                    throw new Error(`Consistency Check Failed: No field name computed for equality artefact '${labelOf(art)}'.`);
-                }
-                const childIds = stringDepEntries(art.dependencies).map(([, value]) => value);
-                const depFieldNames = childIds
-                    .filter(id => model.artefactById.get(id)?.layerId === layer.id)
-                    .map(id => model.fieldNames.get(id))
-                    .filter((name): name is string => !!name);
-                items.push({ name, type: equalityFieldType(model, art), deps: depFieldNames });
-            } else {
-                const fieldName = model.fieldNames.get(art.id);
-                if (!fieldName) {
-                    throw new Error(`Consistency Check Failed: No field assigned for artefact '${labelOf(art)}'.`);
-                }
-                const depFieldNames: string[] = [];
-                const def = getSort(sortStore, art.sortName);
-                for (const [depKey] of nonFlagDeps(def)) {
-                    const depValue = art.dependencies[depKey];
-                    if (typeof depValue === "string") {
-                        const depArt = model.artefactById.get(depValue);
-                        if (depArt && depArt.layerId === layer.id) {
-                            const depFieldName = model.fieldNames.get(depValue);
-                            if (depFieldName) {
-                                depFieldNames.push(depFieldName);
-                            }
+    for (const art of layerArtefacts) {
+        if (art.sortName === "Equality") {
+            const name = proofNames.equalityFieldNames.get(art.id);
+            if (!name) {
+                throw new Error(`Consistency Check Failed: No field name computed for equality artefact '${labelOf(art)}'.`);
+            }
+            const childIds = stringDepEntries(art.dependencies).map(([, value]) => value);
+            const depFieldNames = childIds
+                .filter(id => model.artefactById.get(id)?.layerId === layerId)
+                .map(id => model.fieldNames.get(id))
+                .filter((name): name is string => !!name);
+            items.push({ name, type: equalityFieldType(model, art), deps: depFieldNames, kind: "equation", artefactId: art.id });
+        } else {
+            const fieldName = model.fieldNames.get(art.id);
+            if (!fieldName) {
+                throw new Error(`Consistency Check Failed: No field assigned for artefact '${labelOf(art)}'.`);
+            }
+            const depFieldNames: string[] = [];
+            const def = getSort(sortStore, art.sortName);
+            for (const [depKey] of nonFlagDeps(def)) {
+                const depValue = art.dependencies[depKey];
+                if (typeof depValue === "string") {
+                    const depArt = model.artefactById.get(depValue);
+                    if (depArt && depArt.layerId === layerId) {
+                        const depFieldName = model.fieldNames.get(depValue);
+                        if (depFieldName) {
+                            depFieldNames.push(depFieldName);
                         }
                     }
                 }
-                items.push({ name: fieldName, type: fieldType(model, sortStore, art), deps: depFieldNames });
             }
+            items.push({ name: fieldName, type: fieldType(model, sortStore, art), deps: depFieldNames, kind: "artefact", artefactId: art.id });
         }
-
-        const flagFields = flagFieldsByLayer.get(layer.id) ?? [];
-        for (const flag of flagFields) {
-            items.push({ name: flag.name, type: flag.type, deps: flag.depFieldNames });
-        }
-
-        if (items.length === 0) {
-            continue;
-        }
-
-        emittedLayers.add(layer.id);
-
-        const ordered = topoSortFields(items);
-        const chain = effectiveAncestors(model, layer.id);
-        const ancestorChain = chain.slice(1).reverse();
-
-        if (ancestorChain.length === 0) {
-            lines.push("");
-            lines.push(`  Record ${model.recordNames.get(layer.id)} := {`);
-        } else {
-            const paramStrs: string[] = [];
-            const argNames: string[] = [];
-            for (let i = 0; i < ancestorChain.length; i++) {
-                const paramName = "g".repeat(ancestorChain.length - 1 - i) + "p";
-                const recordName = model.recordNames.get(ancestorChain[i]);
-                if (!recordName) {
-                    throw new Error(`Consistency Check Failed: No record assigned for ancestor layer of '${layer.name}'.`);
-                }
-                const recordTypeStr = argNames.length > 0 ? `${recordName} ${argNames.join(" ")}` : recordName;
-                paramStrs.push(`(${paramName} : ${recordTypeStr})`);
-                argNames.push(paramName);
-            }
-            lines.push("");
-            lines.push(`  Record ${model.recordNames.get(layer.id)} ${paramStrs.join(" ")} := {`);
-        }
-
-        for (const item of ordered) {
-            lines.push(`    ${item.name} : ${item.type};`);
-        }
-        lines.push("  }.");
     }
 
-    if (savedDrawing.isRule) {
-        const roots = savedDrawing.layers.filter(l => l.parentId === null);
-        if (roots.length !== 1) {
-            throw new Error(`Consistency Check Failed: Rule drawing '${savedDrawing.name}' must have exactly one root layer.`);
-        }
-        const root = roots[0];
-        const rootRecord = model.recordNames.get(root.id);
-        if (!rootRecord || !emittedLayers.has(root.id)) {
-            throw new Error(`Consistency Check Failed: The root layer of rule drawing '${savedDrawing.name}' has no emitted record.`);
-        }
+    const flagFields = proofNames.flagFieldsByLayer.get(layerId) ?? [];
+    for (const flag of flagFields) {
+        items.push({ name: flag.name, type: flag.type, deps: flag.depFieldNames, kind: "flag", artefactId: flag.artefactId, flagKey: flag.flagKey });
+    }
 
-        const rootChildren = savedDrawing.layers.filter(l => l.parentId === root.id);
-        const conclusion = rootChildren.find(child => {
-            const childrenOfChild = savedDrawing.layers.filter(l => l.parentId === child.id);
-            return childrenOfChild.length === 0;
-        });
-        if (!conclusion) {
+    return topoSortFields(items) as LayerElement[];
+}
+
+function binderGroups(elements: LayerElement[]): Array<{ names: string[]; type: string }> {
+    const groups: Array<{ names: string[]; type: string }> = [];
+    for (const el of elements) {
+        const last = groups[groups.length - 1];
+        if (last && last.type === el.type) {
+            last.names.push(el.name);
+        } else {
+            groups.push({ names: [el.name], type: el.type });
+        }
+    }
+    return groups;
+}
+
+function renderGroups(groups: Array<{ names: string[]; type: string }>): string {
+    return groups.map(g => `(${g.names.join(" ")} : ${g.type})`).join("");
+}
+
+export function renderForallChain(elements: LayerElement[], rest: string): string {
+    if (elements.length === 0) {
+        return rest;
+    }
+    return `forall ${renderGroups(binderGroups(elements))}, ${rest}`;
+}
+
+export function renderSigma(elements: LayerElement[]): string {
+    if (elements.length === 0) {
+        return "True";
+    }
+    const binders = elements.slice(0, -1);
+    const body = elements[elements.length - 1].type;
+    if (binders.length === 0) {
+        return body;
+    }
+    return `Σ ${renderGroups(binderGroups(binders))}, ${body}`;
+}
+
+export interface PremiseInfo {
+    premiseElements: LayerElement[];
+    childElements: LayerElement[];
+}
+
+export interface RuleTypeInfo {
+    paramName: string | null;
+    type: string;
+    model: DrawingModel;
+    proofNames: ProofFieldNames;
+    rootElements: LayerElement[];
+    conclusionElements: LayerElement[];
+    rootLayerId: string;
+    conclusionLayerId: string | null;
+    premiseLayers: PremiseInfo[];
+}
+
+export interface RuleTypeOptions {
+    reserveParam: boolean;
+    includePremises: boolean;
+}
+
+export function ruleTypeInfo(
+    savedDrawing: SavedDrawing,
+    sortStore: SortStore,
+    registry: NameRegistry,
+    options: RuleTypeOptions
+): RuleTypeInfo {
+    const model = buildDrawingModel(savedDrawing, registry);
+    const proofNames = computeProofFieldNames(savedDrawing, sortStore, model, registry);
+
+    const rootLayers = savedDrawing.layers.filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        throw new Error(`Consistency Check Failed: Rule drawing '${savedDrawing.name}' must have exactly one root layer.`);
+    }
+    const root = rootLayers[0];
+    const rootElements = buildLayerElements(savedDrawing, sortStore, model, proofNames, root.id);
+
+    const rootChildren = savedDrawing.layers.filter(l => l.parentId === root.id);
+    const conclusion = rootChildren.find(child => {
+        const childrenOfChild = savedDrawing.layers.filter(l => l.parentId === child.id);
+        return childrenOfChild.length === 0;
+    });
+
+    let paramName: string | null = null;
+    if (options.reserveParam) {
+        paramName = registry.unique(`${sanitizeIdent(savedDrawing.name || "Drawing")}_rule`);
+    }
+
+    if (!conclusion) {
+        if (options.includePremises) {
             throw new Error(`Consistency Check Failed: Rule drawing '${savedDrawing.name}' has no conclusion layer.`);
         }
-        const conclusionRecord = model.recordNames.get(conclusion.id);
-        if (!conclusionRecord || !emittedLayers.has(conclusion.id)) {
-            throw new Error(`Consistency Check Failed: The conclusion layer of rule drawing '${savedDrawing.name}' has no emitted record.`);
-        }
-
-        const premiseLayers = rootChildren.filter(child => child !== conclusion);
-        const premiseTypes: string[] = [];
-        for (const premise of premiseLayers) {
-            const premiseRecord = model.recordNames.get(premise.id);
-            const childOfPremise = savedDrawing.layers.find(l => l.parentId === premise.id);
-            if (!childOfPremise) {
-                throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' in rule drawing '${savedDrawing.name}' has no child layer.`);
-            }
-            const childRecord = model.recordNames.get(childOfPremise.id);
-            if (!premiseRecord || !emittedLayers.has(premise.id)) {
-                throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' in rule drawing '${savedDrawing.name}' has no emitted record.`);
-            }
-            if (!childRecord || !emittedLayers.has(childOfPremise.id)) {
-                throw new Error(`Consistency Check Failed: Child layer '${childOfPremise.name}' of premise layer '${premise.name}' has no emitted record.`);
-            }
-            premiseTypes.push(`(forall (premise : ${premiseRecord} p), ${childRecord} premise)`);
-        }
-
-        const head = `forall (p : ${rootRecord}),`;
-        lines.push("");
-        if (premiseTypes.length === 0) {
-            lines.push(`  Definition rule : Type := ${head} ${conclusionRecord} p.`);
-        } else {
-            lines.push(`  Definition rule : Type :=`);
-            lines.push(`    ${head}`);
-            for (const pt of premiseTypes) {
-                lines.push(`    ${pt} ->`);
-            }
-            lines.push(`    ${conclusionRecord} p.`);
-        }
+        return {
+            paramName,
+            type: renderForallChain(rootElements, "True"),
+            model,
+            proofNames,
+            rootElements,
+            conclusionElements: [],
+            rootLayerId: root.id,
+            conclusionLayerId: null,
+            premiseLayers: []
+        };
     }
 
-    return lines;
+    const conclusionElements = buildLayerElements(savedDrawing, sortStore, model, proofNames, conclusion.id);
+    const conclusionStr = renderSigma(conclusionElements);
+
+    let type: string;
+    let premiseLayers: PremiseInfo[] = [];
+    if (options.includePremises) {
+        const premises = rootChildren
+            .filter(child => child !== conclusion)
+            .map(premise => {
+                const childOfPremise = savedDrawing.layers.find(l => l.parentId === premise.id);
+                if (!childOfPremise) {
+                    throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' in rule drawing '${savedDrawing.name}' has no child layer.`);
+                }
+                return {
+                    premiseElements: buildLayerElements(savedDrawing, sortStore, model, proofNames, premise.id),
+                    childElements: buildLayerElements(savedDrawing, sortStore, model, proofNames, childOfPremise.id)
+                };
+            });
+        premiseLayers = premises;
+        if (premises.length === 0) {
+            type = renderForallChain(rootElements, conclusionStr);
+        } else {
+            const premiseStrs = premises.map(p => {
+                const childStr = renderSigma(p.childElements);
+                return `(${renderForallChain(p.premiseElements, childStr)})`;
+            });
+            type = renderForallChain(rootElements, `${premiseStrs.join(" -> ")} -> ${conclusionStr}`);
+        }
+    } else {
+        type = renderForallChain(rootElements, conclusionStr);
+    }
+
+    return {
+        paramName,
+        type,
+        model,
+        proofNames,
+        rootElements,
+        conclusionElements,
+        rootLayerId: root.id,
+        conclusionLayerId: conclusion.id,
+        premiseLayers
+    };
+}
+
+export function newExportRegistry(sortStore: SortStore): NameRegistry {
+    const registry = new NameRegistry();
+    const sortDefs = sortStore.getAllSorts().filter(def => def.name !== "Equality");
+    const flagPredicates = new Set<string>();
+    for (const def of sortDefs) {
+        for (const [flagKey, depSortName] of Object.entries(def.dependencies)) {
+            if (depSortName === "flag") {
+                flagPredicates.add(flagKey);
+            }
+        }
+    }
+    for (const name of flagPredicates) {
+        registry.reserve(name);
+    }
+    for (const def of sortDefs) {
+        registry.reserve(def.name);
+    }
+    registry.reserve("Equality");
+    return registry;
 }
 
 export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: SortStore): string {
@@ -531,6 +621,14 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
     }
 
     const lines: string[] = [];
+    lines.push(SIGMA_NOTATION);
+    lines.push("");
+    lines.push(TUPLE_NOTATION);
+    lines.push("");
+    lines.push(SUBST_ALL_TACTIC);
+    lines.push("");
+    lines.push(SUBST_ALL_IN_TACTIC);
+    lines.push("");
     lines.push("Generalizable All Variables.");
     lines.push("Set Implicit Arguments.");
     lines.push("");
@@ -548,7 +646,7 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
             }
         }
         emittedSorts.add(name);
-        lines.push(`  Parameter ${def.name} : ${sortHeaderType(sortStore, def)}.`);
+        lines.push(`Parameter ${def.name} : ${sortHeaderType(sortStore, def)}.`);
     };
     for (const def of sortDefs) {
         emitSort(def.name);
@@ -565,32 +663,21 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
     for (const flagName of flagPredicates) {
         const host = sortDefs.find(def => Object.values(def.dependencies).includes("flag") && Object.keys(def.dependencies).includes(flagName));
         if (host) {
-            lines.push(`  Parameter ${flagName} : ${flagHeaderType(sortStore, host.name)}.`);
+            lines.push(`Parameter ${flagName} : ${flagHeaderType(sortStore, host.name)}.`);
         }
     }
 
-    for (const drawing of savedDrawings) {
-        const registry = new NameRegistry();
-        for (const name of flagPredicates) {
-            registry.reserve(name);
-        }
-        for (const def of sortDefs) {
-            registry.reserve(def.name);
-        }
-        registry.reserve("Equality");
-        if (drawing.isRule) {
-            registry.reserve("rule");
-        }
-        const moduleName = registry.unique(sanitizeIdent(drawing.name || "Drawing"));
+    const rules = savedDrawings.filter(drawing => drawing.isRule);
+    if (rules.length > 0) {
         lines.push("");
-        lines.push(`  (* ${drawing.name.replace(/\*\)/g, "* )")} *)`);
-        lines.push(`  Module ${moduleName}.`);
-        lines.push(...exportDrawing(drawing, sortStore, registry));
-        lines.push(`  End ${moduleName}.`);
-        if (drawing.isRule) {
-            const ruleParam = registry.unique(`${moduleName}_rule`);
-            lines.push(`  Parameter ${ruleParam} : ${moduleName}.rule.`);
+    }
+    for (const drawing of rules) {
+        const registry = newExportRegistry(sortStore);
+        const info = ruleTypeInfo(drawing, sortStore, registry, { reserveParam: true, includePremises: true });
+        if (!info.paramName) {
+            throw new Error(`Consistency Check Failed: Rule drawing '${drawing.name}' has no rule parameter.`);
         }
+        lines.push(`Parameter ${info.paramName} : ${info.type}.`);
     }
 
     return lines.join("\n") + "\n";

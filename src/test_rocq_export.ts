@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as d3 from "d3";
-import { SortStore, Drawing, DrawingStore, findFirstOrderRuleApplications, findSecondOrderRuleApplications } from "./index";
+import { SortStore, Drawing, DrawingStore, findFirstOrderRuleApplications, findSecondOrderRuleApplications, applyFirstOrderRule, applySecondOrderRule } from "./index";
 import { exportDrawingsToRocq } from "./rocq_export";
 import { RocqRecorder } from "./rocq_recording";
 
@@ -129,13 +129,15 @@ recorder.start(mainDrawing, "MainDrawing", sortStore);
 // Apply Foo
 const fooApps = findFirstOrderRuleApplications(foo, mainDrawing);
 if (fooApps.length > 0) {
-    recorder.recordRuleApply(foo, "Foo", fooApps[0], mainDrawing, "MainDrawing", sortStore);
+    const createdFoo = applyFirstOrderRule(foo, mainDrawing, fooApps[0]);
+    recorder.recordRuleApply(foo, "Foo", fooApps[0], mainDrawing, createdFoo, "MainDrawing", sortStore);
 }
 
 // Apply SecondOrderRule
 const soApps = findSecondOrderRuleApplications(rule2, mainDrawing);
 if (soApps.length > 0) {
-    recorder.recordRuleApply(rule2, "SecondOrderRule", soApps[0], mainDrawing, "MainDrawing", sortStore);
+    const soResult = applySecondOrderRule(rule2, mainDrawing, soApps[0], { hostName: "MainDrawing", ruleName: "SecondOrderRule" });
+    recorder.recordRuleApply(rule2, "SecondOrderRule", soApps[0], mainDrawing, soResult.hostArtefacts, "MainDrawing", sortStore);
 }
 
 // Apply MonoRule (mono flag proof field in the rule root record)
@@ -143,14 +145,16 @@ const monoApps = findFirstOrderRuleApplications(monoRule, mainDrawing);
 if (monoApps.length === 0) {
     throw new Error("MonoRule produced no applications on MainDrawing");
 }
-recorder.recordRuleApply(monoRule, "MonoRule", monoApps[0], mainDrawing, "MainDrawing", sortStore);
+const createdMono = applyFirstOrderRule(monoRule, mainDrawing, monoApps[0]);
+recorder.recordRuleApply(monoRule, "MonoRule", monoApps[0], mainDrawing, createdMono, "MainDrawing", sortStore);
 
 // Apply EqRule (equality proof field in the rule root record)
 const eqApps = findFirstOrderRuleApplications(eqRule, mainDrawing);
 if (eqApps.length === 0) {
     throw new Error("EqRule produced no applications on MainDrawing");
 }
-recorder.recordRuleApply(eqRule, "EqRule", eqApps[0], mainDrawing, "MainDrawing", sortStore);
+const createdEq = applyFirstOrderRule(eqRule, mainDrawing, eqApps[0]);
+recorder.recordRuleApply(eqRule, "EqRule", eqApps[0], mainDrawing, createdEq, "MainDrawing", sortStore);
 
 recorder.recordProveSuccess("MainDrawing");
 const recordingScript = recorder.stop();

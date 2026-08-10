@@ -1719,8 +1719,7 @@ function findRootRuleApplications(rule: Drawing, host: Drawing): RuleApplication
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
     validateRuleDrawing(rule);
 
-    const patternArts = rule.getArtefacts().filter(a => a.sortName !== "Equality");
-    return findRuleApplicationsInternal(host, patternArts, extractEqualityConstraints(rule), rule);
+    return findRootRuleApplications(rule, host);
 }
 
 export function findFirstOrderRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {

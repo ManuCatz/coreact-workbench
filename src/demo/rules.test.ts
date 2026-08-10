@@ -103,7 +103,7 @@ describe('applying first-order rules', () => {
         makeEdge(drawing, 'ce1', cev0, cev1);
         makeEdge(drawing, 'ce2', cev1, cev2);
         drawing.addLayer('rule-pattern-eq', 'Rule Pattern', 'root');
-        makeEdge(drawing, 'ce3', cev0, cev2);
+        makeEdge(drawing, 'ce3', cev0, cev2, 'rule-pattern-eq');
         drawing.newEqualityArtefact([cev0, cev1], 'rule-pattern-eq');
         drawing.setIsRule(true);
 
@@ -127,7 +127,7 @@ describe('second-order rules', () => {
         expect(result.derivedRules.length).toBe(1);
 
         const dr = result.derivedRules[0];
-        expect(dr.drawing.isRule).toBe(true);
+        expect(dr.drawing.isRule).toBe(false);
         expect(dr.drawing.getArtefacts().some(a => a.data.label === 'sh')).toBe(false);
         expect(host.getArtefacts().some(a => a.data.label === 'sh' && a.layerId === 'root')).toBe(true);
 

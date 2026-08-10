@@ -501,10 +501,11 @@ export function copyRocqExport(names: string[]): void {
             return;
         }
         const code = exportDrawingsToRocq(drawings, sortStore);
+        const ruleCount = drawings.filter(d => d.isRule).length;
         navigator.clipboard
             .writeText(code)
             .then(() => {
-                alert(`Rocq code for ${drawings.length} drawing(s) copied to clipboard.`);
+                alert(`Exported ${ruleCount} rule${ruleCount === 1 ? '' : 's'} to Rocq.`);
             })
             .catch(() => {
                 alert('Error exporting drawings:\nClipboard access failed.');
@@ -962,12 +963,14 @@ export function applyRuleAt(savedRuleName: string, appIndex: number): void {
     const { savedRule, ruleDrawing, applications } = entry;
     const app = applications[appIndex];
     const activeName = get(activeDrawingName) ?? 'Unsaved Drawing';
+    let createdArtefacts: Artefact[] = [];
     try {
         if (savedRule.isFirstOrder) {
-            const created = applyFirstOrderRule(ruleDrawing, drawing, app);
-            console.log(`Applied '${savedRule.name}': added ${created.length} artefact(s).`);
+            createdArtefacts = applyFirstOrderRule(ruleDrawing, drawing, app);
+            console.log(`Applied '${savedRule.name}': added ${createdArtefacts.length} artefact(s).`);
         } else {
             const result = applySecondOrderRule(ruleDrawing, drawing, app, { hostName: activeName, ruleName: savedRule.name });
+            createdArtefacts = result.hostArtefacts;
             console.log(`Applied '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s), derived ${result.derivedRules.length} drawing(s).`);
             const createdNames: string[] = [];
             for (const derived of result.derivedRules) {
@@ -983,7 +986,7 @@ export function applyRuleAt(savedRuleName: string, appIndex: number): void {
             }
             alert(`Applied rule '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s) and created ${createdNames.length} derived drawing(s):\n- ${createdNames.join('\n- ')}`);
         }
-        rocqRecorder.recordRuleApply(ruleDrawing, savedRule.name, app, drawing, activeName, sortStore);
+        rocqRecorder.recordRuleApply(ruleDrawing, savedRule.name, app, drawing, createdArtefacts, activeName, sortStore);
         refresh();
     } catch (err) {
         alert(`Error applying rule '${savedRule.name}':\n${(err as Error).message}`);

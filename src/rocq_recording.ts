@@ -1,5 +1,6 @@
 import { Artefact, Drawing, DrawingStore, SortStore } from "./index";
-import { drawingExportNames } from "./rocq_export";
+import { drawingExportNames, ruleTypeInfo, newExportRegistry, renderForallChain, renderSigma } from "./rocq_export";
+import type { LayerElement } from "./rocq_export";
 
 function artefactToDataId(drawing: Drawing, art: Artefact): string {
     const idx = drawing.getArtefacts().indexOf(art);
@@ -7,6 +8,36 @@ function artefactToDataId(drawing: Drawing, art: Artefact): string {
         throw new Error("Consistency Check Failed: Artefact does not belong to drawing.");
     }
     return `art_${idx}`;
+}
+
+function escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderPremiseType(
+    premiseElements: LayerElement[],
+    childElements: LayerElement[],
+    rootNameToHost: Map<string, string>
+): string {
+    // Substitute rule root names for their matched host names in two passes so
+    // a host name can never be re-matched by another substitution.
+    const substitutions = [...rootNameToHost.entries()].sort(([a], [b]) => b.length - a.length);
+    const substitute = (s: string): string => {
+        let out = s;
+        const tokens: string[] = [];
+        substitutions.forEach(([ruleName], i) => {
+            const token = `\u0001${i}\u0001`;
+            tokens.push(rootNameToHost.get(ruleName)!);
+            out = out.replace(new RegExp(`\\b${escapeRegExp(ruleName)}\\b`, "g"), token);
+        });
+        tokens.forEach((hostName, i) => {
+            out = out.split(`\u0001${i}\u0001`).join(hostName);
+        });
+        return out;
+    };
+    const mapElements = (elements: LayerElement[]): LayerElement[] =>
+        elements.map(el => ({ ...el, type: substitute(el.type) }));
+    return renderForallChain(mapElements(premiseElements), renderSigma(mapElements(childElements)));
 }
 
 export class RocqRecorder {
@@ -36,27 +67,14 @@ export class RocqRecorder {
         if (rootLayers.length === 0) {
             throw new Error(`Consistency Check Failed: Recorded drawing '${activeDrawingName}' has no root layer.`);
         }
-        const root = rootLayers[0];
-        const rootRecordName = exportNames.recordNames.get(root.id);
-        if (!rootRecordName) {
-            throw new Error(`Consistency Check Failed: Root layer of '${activeDrawingName}' has no record name.`);
-        }
 
-        const childLayers = savedDrawing.layers.filter(l => l.parentId === root.id);
-        const conclusion = childLayers.find(child => {
-            const childrenOfChild = savedDrawing.layers.filter(l => l.parentId === child.id);
-            return childrenOfChild.length === 0;
-        });
+        const registry = newExportRegistry(sortStore);
+        const info = ruleTypeInfo(savedDrawing, sortStore, registry, { reserveParam: false, includePremises: false });
+        const lemmaName = `${moduleName}_rule`;
 
-        if (conclusion && exportNames.recordNames.has(conclusion.id)) {
-            const conclusionRecordName = exportNames.recordNames.get(conclusion.id)!;
-            this.lines.push(`Goal (forall p : ${moduleName}.${rootRecordName}, ${moduleName}.${conclusionRecordName} p).`);
-            this.lines.push("destruct p.");
-        } else {
-            this.lines.push(`Goal (forall p : ${moduleName}.${rootRecordName}, True).`);
-            this.lines.push("intro p.");
-            this.lines.push("destruct p.");
-        }
+        this.lines.push(`Lemma ${lemmaName} : ${info.type}.`);
+        this.lines.push("intros.");
+        this.lines.push("subst_all.");
 
         this.active = true;
     }
@@ -66,6 +84,7 @@ export class RocqRecorder {
         savedRuleName: string,
         application: { matchedArtefacts: Map<Artefact, Artefact> },
         hostDrawing: Drawing,
+        createdArtefacts: Artefact[],
         hostActiveName: string,
         sortStore: SortStore
     ): void {
@@ -81,8 +100,6 @@ export class RocqRecorder {
             throw new Error(`Consistency Check Failed: Applied rule '${savedRuleName}' has no root layer.`);
         }
 
-        const ruleRootArts = savedRule.artefacts.filter(a => a.layerId === ruleRoot.id);
-        const patternArts = ruleRootArts.filter(a => a.sortName !== "Equality");
         const savedHost = DrawingStore.drawingToSavedDrawing(hostActiveName, hostDrawing);
         const hostNames = drawingExportNames(savedHost, sortStore);
 
@@ -94,91 +111,103 @@ export class RocqRecorder {
             matchMap.set(pId, hId);
         }
 
-        const assignments: string[] = [];
-        for (const pArtData of patternArts) {
-            const ruleFieldName = ruleNames.fieldNames.get(pArtData.id);
-            if (!ruleFieldName) {
-                throw new Error(`Consistency Check Failed: No field name assigned for rule pattern artefact '${pArtData.id}'.`);
-            }
-            const matchedHostId = matchMap.get(pArtData.id);
-            if (!matchedHostId) {
-                throw new Error(`Consistency Check Failed: Pattern artefact '${pArtData.id}' was not matched in rule application.`);
-            }
-            const hostFieldName = hostNames.fieldNames.get(matchedHostId);
-            if (!hostFieldName) {
-                throw new Error(`Consistency Check Failed: No field name assigned for matched host artefact '${matchedHostId}'.`);
-            }
-            assignments.push(`${ruleNames.moduleName}.${ruleFieldName} := ${hostFieldName}`);
-
-            // Flag proof fields established in the rule root layer are filled from the
-            // host's flag hypothesis (in scope after the header's `destruct p.`).
-            const def = sortStore.getSort(pArtData.sortName);
-            if (def) {
-                for (const [flagKey, expected] of Object.entries(def.dependencies)) {
-                    if (expected !== "flag") {
-                        continue;
-                    }
-                    if (pArtData.dependencies[flagKey] !== true) {
-                        continue;
-                    }
-                    const ruleFlagLayer = pArtData.flagLayers?.[flagKey] ?? pArtData.layerId;
-                    if (ruleFlagLayer !== ruleRoot.id) {
-                        continue;
-                    }
-                    const ruleFlagName = ruleNames.flagFieldNames.get(`${pArtData.id}::${flagKey}`);
-                    const hostFlagName = hostNames.flagFieldNames.get(`${matchedHostId}::${flagKey}`);
-                    if (!ruleFlagName || !hostFlagName) {
-                        throw new Error(`Consistency Check Failed: No flag field name for '${flagKey}' on artefact '${pArtData.id}' in rule '${savedRuleName}'.`);
-                    }
-                    assignments.push(`${ruleNames.moduleName}.${ruleFlagName} := ${hostFlagName}`);
-                }
-            }
-        }
-
-        // Equality proof fields in the rule root layer are solved from the host's
-        // equality hypotheses using `congruence` (valid as a term via `ltac:(...)`).
-        for (const eqArt of ruleRootArts.filter(a => a.sortName === "Equality")) {
-            const ruleEqName = ruleNames.equalityFieldNames.get(eqArt.id);
-            if (!ruleEqName) {
-                throw new Error(`Consistency Check Failed: No equality field name for equality artefact '${eqArt.id}' in rule '${savedRuleName}'.`);
-            }
-            assignments.push(`${ruleNames.moduleName}.${ruleEqName} := ltac:(congruence)`);
-        }
-
-        const recordStr = `{| ${assignments.join("; ")} |}`;
-
-        if (!ruleNames.ruleParam) {
+        // The rule's own structure: root elements give the canonical
+        // (dependency-ordered) argument order of the exported rule parameter.
+        const rootChildren = savedRule.layers.filter(l => l.parentId === ruleRoot.id);
+        const hasConclusion = rootChildren.some(child => {
+            const childrenOfChild = savedRule.layers.filter(l => l.parentId === child.id);
+            return childrenOfChild.length === 0;
+        });
+        const ruleInfo = ruleTypeInfo(savedRule, sortStore, newExportRegistry(sortStore), {
+            reserveParam: true,
+            includePremises: hasConclusion
+        });
+        const ruleParam = ruleNames.ruleParam;
+        if (!ruleParam) {
             throw new Error(`Consistency Check Failed: Rule '${savedRuleName}' has no exported rule parameter.`);
         }
 
-        if (savedRule.isFirstOrder) {
-            this.lines.push(`destruct (${ruleNames.ruleParam} ${recordStr}).`);
-        } else {
-            this.lines.push(`destruct (${ruleNames.ruleParam} (p := ${recordStr})).`);
-
-            const childLayers = savedRule.layers.filter(l => l.parentId === ruleRoot.id);
-            const conclusion = childLayers.find(child => {
-                const childrenOfChild = savedRule.layers.filter(l => l.parentId === child.id);
-                return childrenOfChild.length === 0;
-            });
-            const premiseLayers = childLayers.filter(child => child !== conclusion);
-
-            for (const premise of premiseLayers) {
-                const premiseRecordName = ruleNames.recordNames.get(premise.id);
-                const childOfPremise = savedRule.layers.find(l => l.parentId === premise.id);
-                if (!childOfPremise) {
-                    throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' has no child layer.`);
-                }
-                const childRecordName = ruleNames.recordNames.get(childOfPremise.id);
-                if (!premiseRecordName || !childRecordName) {
-                    throw new Error(`Consistency Check Failed: Premise layer '${premise.name}' missing record names.`);
-                }
-                this.lines.push("{");
-                this.lines.push(`  change (forall p : ${ruleNames.moduleName}.${premiseRecordName} ${recordStr}, ${ruleNames.moduleName}.${childRecordName} p).`);
-                this.lines.push("  admit.");
-                this.lines.push("}");
-                this.usedAdmit = true;
+        // Build the rule argument list in the exported type's binder order
+        // (artefacts, flags, and equalities interleaved topologically).
+        const tupleValues: string[] = [];
+        for (const el of ruleInfo.rootElements) {
+            if (el.kind === "equation") {
+                // After the header's `subst_all.` the matched host arguments are
+                // definitionally equal, so the constraint is satisfied by `eq_refl`.
+                tupleValues.push("eq_refl");
+                continue;
             }
+            const artefactId = el.artefactId;
+            if (!artefactId) {
+                throw new Error(`Consistency Check Failed: Rule element '${el.name}' in '${savedRuleName}' has no artefact id.`);
+            }
+            const matchedHostId = matchMap.get(artefactId);
+            if (!matchedHostId) {
+                throw new Error(`Consistency Check Failed: Pattern artefact '${artefactId}' was not matched in rule application.`);
+            }
+            if (el.kind === "flag") {
+                const hostFlagName = hostNames.flagFieldNames.get(`${matchedHostId}::${el.flagKey}`);
+                if (!hostFlagName) {
+                    throw new Error(`Consistency Check Failed: No flag field name for '${el.flagKey}' on artefact '${artefactId}' in rule '${savedRuleName}'.`);
+                }
+                tupleValues.push(hostFlagName);
+            } else {
+                const hostFieldName = hostNames.fieldNames.get(matchedHostId);
+                if (!hostFieldName) {
+                    throw new Error(`Consistency Check Failed: No field name assigned for matched host artefact '${matchedHostId}'.`);
+                }
+                tupleValues.push(hostFieldName);
+            }
+        }
+
+        const argsStr = tupleValues.join(" ");
+
+        const newNames = createdArtefacts.map(art => {
+            const newId = artefactToDataId(hostDrawing, art);
+            const newName = art.sortName === "Equality"
+                ? hostNames.equalityFieldNames.get(newId) ?? hostNames.fieldNames.get(newId)
+                : hostNames.fieldNames.get(newId);
+            if (!newName) {
+                throw new Error(`Consistency Check Failed: No field name assigned for new host artefact '${newId}'.`);
+            }
+            return newName;
+        });
+
+        // Second-order rules: assert each premise as an admitted hypothesis whose
+        // type is the rule's premise type re-rendered with the host's names.
+        const rootNameToHost = new Map<string, string>();
+        ruleInfo.rootElements.forEach((el, i) => rootNameToHost.set(el.name, tupleValues[i]));
+
+        const premiseProofNames: string[] = [];
+        for (let k = 0; k < ruleInfo.premiseLayers.length; k++) {
+            const premise = ruleInfo.premiseLayers[k];
+            const premiseType = renderPremiseType(premise.premiseElements, premise.childElements, rootNameToHost);
+            const proofName = `Hpremise${k + 1}`;
+            this.lines.push(`assert (${proofName} : ${premiseType}) by admit.`);
+            premiseProofNames.push(proofName);
+            this.usedAdmit = true;
+        }
+
+        const conclusionHasEquality = ruleInfo.conclusionElements.some(el => el.kind === "equation");
+
+        if (premiseProofNames.length > 0) {
+            const fullArgsStr = [...tupleValues, ...premiseProofNames].join(" ");
+            const assertBase = `assert (${newNames[0]} := @${ruleParam} ${fullArgsStr})`;
+            if (createdArtefacts.length === 1) {
+                this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all.` : `${assertBase}.`);
+            } else {
+                const destruct = `${assertBase}; destruct ${newNames[0]} as (${newNames.join(" & ")})`;
+                this.lines.push(conclusionHasEquality ? `${destruct}; subst_all.` : `${destruct}.`);
+            }
+            return;
+        }
+
+        const destructBase = `destruct (@${ruleParam} ${argsStr}) as (${newNames.join(" & ")})`;
+        const assertBase = `assert (${newNames[0]} := @${ruleParam} ${argsStr})`;
+        if (createdArtefacts.length === 1) {
+            this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all.` : `${assertBase}.`);
+        } else {
+            this.lines.push(conclusionHasEquality ? `${destructBase}; subst_all.` : `${destructBase}.`);
         }
     }
 
@@ -195,7 +224,7 @@ export class RocqRecorder {
         if (!this.active || hostActiveName !== this.drawingName) {
             return;
         }
-        this.lines.push("constructor; easy.");
+        this.lines.push("repeat constructor; eassumption.");
     }
 
     public stop(): string {
