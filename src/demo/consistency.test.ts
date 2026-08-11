@@ -224,4 +224,104 @@ describe('layer provability', () => {
 
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
     });
+
+    it('is provable when child vertices and edge match parent vertices and edge structurally', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const rx = makeVertex(drawing, 'rx');
+        const ry = makeVertex(drawing, 'ry');
+        makeEdge(drawing, 'rf', rx, ry);
+        const ca = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'ca' }, 'prov-child');
+        const cb = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cb' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: ca, target: cb }, { width: 2, bend: 0, label: 'ce' }, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
+    });
+
+    it('is not provable when the child edge is reversed', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const a = makeVertex(drawing, 'a');
+        const b = makeVertex(drawing, 'b');
+        makeEdge(drawing, 'f', a, b);
+        drawing.newArtefact('Edge', { source: b, target: a }, { width: 2, bend: 0, label: 'g' }, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
+    });
+
+    it('is provable with non-injective matching when only one parent vertex is available', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const x = makeVertex(drawing, 'x');
+        makeEdge(drawing, 'loop', x, x);
+        const ca = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'ca' }, 'prov-child');
+        const cb = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cb' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: ca, target: cb }, { width: 2, bend: 0, label: 'ce' }, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
+    });
+
+    it('is provable when a child equality premise is discharged by a parent equality', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const rx = makeVertex(drawing, 'rx');
+        const ry = makeVertex(drawing, 'ry');
+        makeEdge(drawing, 'rf', rx, ry);
+        const ca = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'ca' }, 'prov-child');
+        const cb = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cb' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: ca, target: cb }, { width: 2, bend: 0, label: 'ce' }, 'prov-child');
+        drawing.addEqualityArtefactUnchecked([ca, cb], 'prov-child');
+        drawing.addEqualityArtefactUnchecked([rx, ry], 'root');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
+    });
+
+    it('is not provable when a child equality premise is not discharged by the parent', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const rx = makeVertex(drawing, 'rx');
+        const ry = makeVertex(drawing, 'ry');
+        makeEdge(drawing, 'rf', rx, ry);
+        const ca = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'ca' }, 'prov-child');
+        const cb = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cb' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: ca, target: cb }, { width: 2, bend: 0, label: 'ce' }, 'prov-child');
+        drawing.addEqualityArtefactUnchecked([ca, cb], 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
+    });
+
+    it('matches two child edges sharing a vertex against a parent sharing that vertex', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const rx = makeVertex(drawing, 'rx');
+        const ry = makeVertex(drawing, 'ry');
+        const rz = makeVertex(drawing, 'rz');
+        makeEdge(drawing, 'r1', rx, ry);
+        makeEdge(drawing, 'r2', ry, rz);
+        const ca = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'ca' }, 'prov-child');
+        const cb = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cb' }, 'prov-child');
+        const cc = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cc' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: ca, target: cb }, { width: 2, bend: 0, label: 'c1' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: cb, target: cc }, { width: 2, bend: 0, label: 'c2' }, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
+    });
+
+    it('does not match two child edges sharing a vertex against a parent that does not share it', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const rx = makeVertex(drawing, 'rx');
+        const ry = makeVertex(drawing, 'ry');
+        const rz = makeVertex(drawing, 'rz');
+        const rw = makeVertex(drawing, 'rw');
+        makeEdge(drawing, 'r1', rx, ry);
+        makeEdge(drawing, 'r2', rz, rw);
+        const ca = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'ca' }, 'prov-child');
+        const cb = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cb' }, 'prov-child');
+        const cc = drawing.newArtefact('Vertex', {}, { position: [0, 0], label: 'cc' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: ca, target: cb }, { width: 2, bend: 0, label: 'c1' }, 'prov-child');
+        drawing.newArtefact('Edge', { source: cb, target: cc }, { width: 2, bend: 0, label: 'c2' }, 'prov-child');
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
+    });
 });

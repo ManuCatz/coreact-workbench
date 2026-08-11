@@ -291,8 +291,6 @@ export class Drawing {
         const parentId: string = layer.parentId;
         const parentLayer = this.layers.get(parentId);
         const parentName = parentLayer ? parentLayer.name : parentId;
-        const layerArtefacts = this.artefacts.filter(a => a.layerId === layerId);
-        const parentArtefacts = this.artefacts.filter(b => b.layerId === parentId);
 
         const labelOf = (a: Artefact): string => (typeof a.data.label === "string" ? a.data.label : a.sortName);
 
@@ -313,6 +311,12 @@ export class Drawing {
             }
         }
 
+        const layerArtefacts = this.artefacts.filter(a => a.layerId === layerId);
+        const parentArtefacts = this.artefacts.filter(b => b.layerId === parentId);
+
+        const pattern: Artefact[] = [];
+        const equalityConstraints: Array<{ children: Artefact[] }> = [];
+
         for (const art of layerArtefacts) {
             if (art.sortName === "Equality") {
                 const children = art instanceof EqualityArtefact
@@ -326,27 +330,111 @@ export class Drawing {
                     };
                 }
 
-                const first = children[0];
-                for (let i = 1; i < children.length; i++) {
-                    if (!this.areEqual(first, children[i], parentId)) {
-                        return {
-                            provable: false,
-                            reason: `Equality between '${labelOf(first)}' and '${labelOf(children[i])}' in layer '${layer.name}' is not already provable in parent layer '${parentName}'.`
-                        };
-                    }
-                }
+                equalityConstraints.push({ children });
             } else {
-                const match = parentArtefacts.find(b => this.hasSameDependenciesUpToEquality(art, b, parentId));
-                if (!match) {
-                    return {
-                        provable: false,
-                        reason: `Artefact '${labelOf(art)}' (${art.sortName}) in layer '${layer.name}' has no counterpart with the same dependencies (up to provable equality) in parent layer '${parentName}'.`
-                    };
-                }
+                pattern.push(art);
             }
         }
 
-        return { provable: true };
+        // Order pattern artefacts so that dependencies within the pattern come first.
+        const patternSet = new Set<Artefact>(pattern);
+        const ordered: Artefact[] = [];
+        const orderedSet = new Set<Artefact>();
+        while (ordered.length < pattern.length) {
+            const next = pattern.find(a =>
+                !orderedSet.has(a) &&
+                Object.values(a.dependencies).every(dep =>
+                    typeof dep === "boolean" || !patternSet.has(dep) || orderedSet.has(dep)
+                )
+            );
+            if (!next) break;
+            ordered.push(next);
+            orderedSet.add(next);
+        }
+        if (orderedSet.size < pattern.length) {
+            return {
+                provable: false,
+                reason: `Layer '${layer.name}' contains artefacts with circular dependencies; it cannot be matched in parent layer '${parentName}'.`
+            };
+        }
+
+        const assignment = new Map<Artefact, Artefact>();
+
+        const checkEqualityConstraints = (): boolean => {
+            for (const c of equalityConstraints) {
+                const imgs: Artefact[] = [];
+                for (const child of c.children) {
+                    const img = patternSet.has(child) ? assignment.get(child) : child;
+                    if (!img) return false;
+                    imgs.push(img);
+                }
+                for (let i = 1; i < imgs.length; i++) {
+                    if (!this.areEqual(imgs[0], imgs[i], parentId)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+
+        const backtrack = (i: number): boolean => {
+            if (i === ordered.length) {
+                return checkEqualityConstraints();
+            }
+
+            const a = ordered[i];
+            for (const cand of parentArtefacts) {
+                if (cand.sortName !== a.sortName) continue;
+
+                let ok = true;
+                for (const [k, dep] of Object.entries(a.dependencies)) {
+                    if (typeof dep === "boolean") {
+                        const set = dep === true;
+                        const candSet = cand.dependencies[k] === true;
+                        if (set !== candSet) {
+                            ok = false;
+                            break;
+                        }
+                        if (set && !this.flagsMatch(a, cand, k)) {
+                            ok = false;
+                            break;
+                        }
+                    } else {
+                        const hostDep = cand.dependencies[k];
+                        if (typeof hostDep === "boolean" || hostDep === undefined) {
+                            ok = false;
+                            break;
+                        }
+                        const expected = patternSet.has(dep) ? assignment.get(dep) : dep;
+                        if (expected === undefined) {
+                            ok = false;
+                            break;
+                        }
+                        if (hostDep !== expected && !this.areEqual(hostDep, expected, parentId)) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if (!ok) continue;
+
+                assignment.set(a, cand);
+                if (backtrack(i + 1)) {
+                    return true;
+                }
+                assignment.delete(a);
+            }
+            return false;
+        };
+
+        if (backtrack(0)) {
+            return { provable: true };
+        }
+
+        return {
+            provable: false,
+            reason: `Layer '${layer.name}' has no match in parent layer '${parentName}' compatible with its dependencies up to provable equality.`
+        };
     }
 
     public addLayer(
@@ -986,31 +1074,6 @@ export class Drawing {
         if (set1 !== set2) return false;
         if (!set1) return true;
         return a1.getFlagLayer(flagKey) === a2.getFlagLayer(flagKey);
-    }
-
-    private hasSameDependenciesUpToEquality(a1: Artefact, a2: Artefact, layerId: string): boolean {
-        if (a1.sortName !== a2.sortName) {
-            return false;
-        }
-
-        for (const [depKey, depVal] of Object.entries(a1.dependencies)) {
-            const otherDep = a2.dependencies[depKey];
-            if (typeof depVal === "boolean" || depVal === undefined) {
-                const set1 = depVal === true;
-                const set2 = otherDep === true;
-                if (set1 !== set2) return false;
-                if (set1 && !this.flagsMatch(a1, a2, depKey)) return false;
-            } else {
-                if (typeof otherDep !== "object" || otherDep === null || otherDep === undefined || typeof otherDep === "boolean") {
-                    return false;
-                }
-                if (depVal !== otherDep && !this.areEqual(depVal, otherDep, layerId)) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
     }
 
     public areDependenciesEqual(a1: Artefact, a2: Artefact): boolean {
