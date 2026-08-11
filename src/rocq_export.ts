@@ -67,7 +67,7 @@ Notation "( x , .. , y , p )" :=
 
 export const SUBST_ALL_TACTIC = `Ltac subst_all1 :=
   repeat (match goal with 
-     | e : ?x = ?y |- _ => subst x; set (x := y); cbn
+     | e : ?x = ?y |- _ => subst x; pose (x := y); cbn
     end). `;
 
 export const SUBST_ALL_LTAC2 = `Ltac2 subst_all () := ltac1:(subst_all1).`;
@@ -82,20 +82,14 @@ Ltac2 rec destruct_sigma_tac (t : constr) (l : ident list) :=
   match l with
   | [] => ()
   | [x] =>
-    ltac1:(x t |- assert ( x := t)) (Ltac1.of_ident x) (Ltac1.of_constr t)
+    ltac1:(x t |- assert ( x := t); subst_all1) (Ltac1.of_ident x) (Ltac1.of_constr t)
   | x :: q =>
       let h := Fresh.in_goal @destruct in
-      ltac1:(x t h |- destruct t as [x h]) (Ltac1.of_ident x)
-        (Ltac1.of_constr t) (Ltac1.of_ident h);
-
-      let tx := Constr.type (Control.hyp x) in
-      lazy_match! tx with
-      | _ = _ => ltac1:(h |- subst; cbn in h) (Ltac1.of_ident h)
-      | _ => ()
-      end;
-      destruct_sigma_tac (Control.hyp h) q;
+      ltac1:(x t h |- destruct t as [x h]; subst_all1) (Ltac1.of_ident x)
+        (Ltac1.of_constr t) (Ltac1.of_ident h);      
+        destruct_sigma_tac (Control.hyp h) q;
       clear $h
-      end.
+    end.
 
 Ltac2 Notation "destruct_sigma"
     t(constr) "as" l(list1(ident)) :=

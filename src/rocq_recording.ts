@@ -265,26 +265,22 @@ export class RocqRecorder {
             premiseProofNames.push(proofName);
         }
 
-        const conclusionHasEquality = ruleInfo.conclusionElements.some(el => el.kind === "equation");
-
         if (premiseProofNames.length > 0) {
             const fullArgsStr = [...tupleValues, ...premiseProofNames].join(" ");
-            const assertBase = `assert (${assertName} := @${ruleParam} ${fullArgsStr})`;
-            if (conclusionArity <= 1) {
-                this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all ().` : `${assertBase}.`);
+            if (conclusionArity === 0) {
+                this.lines.push(`assert (${assertName} := @${ruleParam} ${fullArgsStr}).`);
+            } else if (conclusionArity === 1) {
+                this.lines.push(`destruct_sigma (@${ruleParam} ${fullArgsStr}) as ${conclusionHostNames.join(" ")}.`);
             } else {
-                const destruct = `${assertBase}; destruct_sigma ${assertName} as ${conclusionHostNames.join(" ")}`;
-                this.lines.push(conclusionHasEquality ? `${destruct}; subst_all ().` : `${destruct}.`);
+                this.lines.push(`assert (${assertName} := @${ruleParam} ${fullArgsStr}); destruct_sigma ${assertName} as ${conclusionHostNames.join(" ")}.`);
             }
             return;
         }
 
-        const destructBase = `destruct_sigma (@${ruleParam} ${argsStr}) as ${conclusionHostNames.join(" ")}`;
-        const assertBase = `assert (${assertName} := @${ruleParam} ${argsStr})`;
-        if (conclusionArity <= 1) {
-            this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all ().` : `${assertBase}.`);
+        if (conclusionArity === 0) {
+            this.lines.push(`assert (${assertName} := @${ruleParam} ${argsStr}).`);
         } else {
-            this.lines.push(conclusionHasEquality ? `${destructBase}; subst_all ().` : `${destructBase}.`);
+            this.lines.push(`destruct_sigma (@${ruleParam} ${argsStr}) as ${conclusionHostNames.join(" ")}.`);
         }
     }
 

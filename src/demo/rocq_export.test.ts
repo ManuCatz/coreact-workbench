@@ -23,7 +23,7 @@ describe('rocq export', () => {
         expect(code).toContain('Parameter Edge : Vertex -> Vertex -> Type.');
         expect(code).toContain('Require Import Ltac2.Ltac2.');
         expect(code).toContain('Ltac subst_all1 :=');
-        expect(code).toContain('subst x; set (x := y); cbn');
+        expect(code).toContain('subst x; pose (x := y); cbn');
         expect(code).toContain('Ltac2 subst_all () := ltac1:(subst_all1).');
         expect(code).toContain('Ltac2 Notation "destruct_sigma"');
         expect(code).toContain('Tactic Notation "subst_all_in"');
@@ -66,7 +66,7 @@ describe('rocq export', () => {
         expect(script).toContain('repeat (intros; subst_all ()).');
         expect(script).toContain('MainDrawing');
         expect(script).toContain('Qed');
-        expect(script).toContain('assert (f := @Foo_rule a b).');
+        expect(script).toContain('destruct_sigma (@Foo_rule a b) as f');
         expect(script).toContain('repeat constructor; eassumption');
         expect(script).toContain('forall (a b : Vertex)');
         expect(script).toContain('ltac:(subst_all_in (True))');
@@ -97,7 +97,7 @@ describe('rocq export', () => {
         expect(script).not.toContain('subst_all');
     });
 
-    it('keeps subst_all when the rule conclusion includes an equality', () => {
+    it('relies on destruct_sigma to substitute equalities in a multi-element conclusion, without subst_all', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -126,10 +126,10 @@ describe('rocq export', () => {
         const script = recorder.stop();
 
         expect(script).toContain('destruct_sigma (@FooEq_rule a b) as ');
-        expect(script).toContain('; subst_all ().');
+        expect(script).not.toContain('; subst_all ().');
     });
 
-    it('uses assert with subst_all and no destruct when a rule has a single equality in its conclusion', () => {
+    it('destructs a single equality conclusion without subst_all', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -154,11 +154,11 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'EqConclusionRule', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('assert (eq_a_b := @EqConclusionRule_rule a b); subst_all ().');
-        expect(script).not.toContain('destruct');
+        expect(script).toContain('destruct_sigma (@EqConclusionRule_rule a b) as eq_a_b');
+        expect(script).not.toContain('; subst_all');
     });
 
-    it('uses assert with no destruct or subst_all for a second-order rule with a single non-equality conclusion', () => {
+    it('destructs a second-order rule with a single non-equality conclusion, without subst_all', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -190,9 +190,8 @@ describe('rocq export', () => {
         expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_rule : forall (a b : Vertex), forall (pe : Edge a b), Edge a b.');
         expect(script).toContain('Admitted.');
         expect(script).toContain('assert (Hpremise1 : forall (pe : Edge a b), Edge a b) by eauto using MainDrawing___SecondOrderRule___Premise_rule.');
-        expect(script).toContain('assert (ce := @SecondOrderRule_rule a b Hpremise1).');
+        expect(script).toContain('destruct_sigma (@SecondOrderRule_rule a b Hpremise1) as ce');
         expect(script).not.toContain('by admit');
-        expect(script).not.toContain('destruct');
         expect(script).not.toContain('; subst_all.');
     });
 
@@ -228,7 +227,7 @@ describe('rocq export', () => {
         recorder.recordProveSuccess('MainDrawing');
         const script = recorder.stop();
 
-        expect(script).toContain('assert (f := @ArgOrderRule_rule a b c eq_refl mw mono_mw).');
+        expect(script).toContain('destruct_sigma (@ArgOrderRule_rule a b c eq_refl mw mono_mw) as f');
         expect(script).not.toContain('@ArgOrderRule_rule a b c mw mono_mw eq_refl');
     });
 
@@ -277,7 +276,7 @@ describe('rocq export', () => {
         expect(script).not.toContain('as ()');
     });
 
-    it('asserts a conclusion that is only a flag already present in a host child layer, without destruct', () => {
+    it('destructs a conclusion that is only a flag already present in a host child layer', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -301,8 +300,7 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'FlagOnlyRule', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('assert (mono_he2 := @FlagOnlyRule_rule hv0 hv1 hv2 he1 he2)');
-        expect(script).not.toContain('destruct');
+        expect(script).toContain('destruct_sigma (@FlagOnlyRule_rule hv0 hv1 hv2 he1 he2) as mono_he2');
         expect(script).not.toContain('as ()');
     });
 
