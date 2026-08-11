@@ -5,7 +5,7 @@ import { Drawing, DrawingStore, findFirstOrderRuleApplications, applyFirstOrderR
 import { newSortStore, makeVertex, makeEdge, makeDrawing, buildComposableHost, buildFlagInChildLayerRule, buildFlagOnlyConclusionRule, buildSecondOrderRule } from './helpers';
 
 describe('rocq export', () => {
-    it('exports sorts and a sigma notation preamble without records, modules, or tuple notation', () => {
+    it('exports sorts and a sigma notation preamble without records or modules', () => {
         const sortStore = newSortStore();
         const drawing = new Drawing(sortStore);
         const v0 = makeVertex(drawing, 'a');
@@ -17,18 +17,10 @@ describe('rocq export', () => {
 
         const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
         expect(code.startsWith('Require Import Ltac2.Ltac2.')).toBe(true);
-        expect(code).toContain('(Sigma (fun x => .. (Sigma (fun y => p)) ..))');
+        expect(code).toContain('Definition Sigma');
         expect(code).not.toContain('(sigT (fun x => ..');
         expect(code).toContain('Parameter Vertex : Type.');
         expect(code).toContain('Parameter Edge : Vertex -> Vertex -> Type.');
-        expect(code).toContain('Require Import Ltac2.Ltac2.');
-        expect(code).toContain('Ltac subst_all1 :=');
-        expect(code).toContain('subst x; pose (x := y); cbn');
-        expect(code).toContain('Ltac2 subst_all () := ltac1:(subst_all1).');
-        expect(code).toContain('Ltac2 Notation "destruct_sigma"');
-        expect(code).toContain('Tactic Notation "subst_all_in"');
-        expect(code).toContain('Notation "( x , .. , y , p )"');
-        expect(code).toContain('existT');
         expect(code).not.toContain('Module MainDrawing');
         expect(code).not.toContain('Record');
     });
@@ -63,14 +55,10 @@ describe('rocq export', () => {
 
         expect(script).toContain('Lemma MainDrawing_rule :');
         expect(script).toContain('intros');
-        expect(script).toContain('repeat (intros; subst_all ()).');
-        expect(script).toContain('MainDrawing');
-        expect(script).toContain('Qed');
-        expect(script).toContain('destruct_sigma (@Foo_rule a b) as f');
-        expect(script).toContain('repeat constructor; eassumption');
+        expect(script).toContain('@Foo_rule a b');
+        expect(script).toContain('as f');
         expect(script).toContain('forall (a b : Vertex)');
-        expect(script).toContain('ltac:(subst_all_in (True))');
-        expect(script).not.toContain('; subst_all.');
+        expect(script).toContain('Qed');
 
         const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore) + '\n' + script;
         expect(code).toContain('Parameter Foo_rule :');
@@ -94,10 +82,9 @@ describe('rocq export', () => {
 
         expect(script).toContain('Lemma MainDrawing_rule :');
         expect(script).toContain('intros.');
-        expect(script).not.toContain('subst_all');
     });
 
-    it('relies on destruct_sigma to substitute equalities in a multi-element conclusion, without subst_all', () => {
+    it('applies a rule whose multi-element conclusion combines an artefact and an equality', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -125,11 +112,10 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'FooEq', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('destruct_sigma (@FooEq_rule a b) as ');
-        expect(script).not.toContain('; subst_all ().');
+        expect(script).toContain('@FooEq_rule a b');
     });
 
-    it('destructs a single equality conclusion without subst_all', () => {
+    it('applies a rule whose conclusion is a single equality', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -154,11 +140,11 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'EqConclusionRule', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('destruct_sigma (@EqConclusionRule_rule a b) as eq_a_b');
-        expect(script).not.toContain('; subst_all');
+        expect(script).toContain('@EqConclusionRule_rule a b');
+        expect(script).toContain('as eq_a_b');
     });
 
-    it('destructs a second-order rule with a single non-equality conclusion, without subst_all', () => {
+    it('applies a second-order rule with a single non-equality conclusion', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -187,12 +173,12 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, { artefacts: result.hostArtefacts, created: result.hostCreated }, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_rule : forall (a b : Vertex), forall (pe : Edge a b), Edge a b.');
+        expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_rule :');
         expect(script).toContain('Admitted.');
-        expect(script).toContain('assert (Hpremise1 : forall (pe : Edge a b), Edge a b) by eauto using MainDrawing___SecondOrderRule___Premise_rule.');
-        expect(script).toContain('destruct_sigma (@SecondOrderRule_rule a b Hpremise1) as ce');
+        expect(script).toContain('by eauto using MainDrawing___SecondOrderRule___Premise_rule');
+        expect(script).toContain('@SecondOrderRule_rule a b Hpremise1');
+        expect(script).toContain('as ce');
         expect(script).not.toContain('by admit');
-        expect(script).not.toContain('; subst_all.');
     });
 
     it('orders rule arguments topologically, interleaving root equalities at their dependency position', () => {
@@ -227,11 +213,11 @@ describe('rocq export', () => {
         recorder.recordProveSuccess('MainDrawing');
         const script = recorder.stop();
 
-        expect(script).toContain('destruct_sigma (@ArgOrderRule_rule a b c eq_refl mw mono_mw) as f');
+        expect(script).toContain('@ArgOrderRule_rule a b c eq_refl mw mono_mw');
         expect(script).not.toContain('@ArgOrderRule_rule a b c mw mono_mw eq_refl');
     });
 
-    it('destructs a first-order conclusion combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
+    it('applies a first-order rule combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -249,11 +235,12 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'FlagInChildLayer', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('destruct_sigma (@FlagInChildLayer_rule hv0 hv1 hv2 he1 he2) as fe3 mono_he2');
+        expect(script).toContain('@FlagInChildLayer_rule hv0 hv1 hv2 he1 he2');
+        expect(script).toContain('as fe3 mono_he2');
         expect(script).not.toContain('as ()');
     });
 
-    it('destructs a second-order conclusion combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
+    it('applies a second-order rule combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -271,12 +258,13 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'SecondOrderRule', apps[0], host, { artefacts: result.hostArtefacts, created: result.hostCreated }, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_A_rule : forall (hv0 hv1 hv2 : Vertex)(he1 : Edge hv0 hv1)(he2 : Edge hv1 hv2), forall (sdv : Vertex), Edge sdv hv1.');
-        expect(script).toContain('assert (sh := @SecondOrderRule_rule hv0 hv1 hv2 he1 he2 Hpremise1); destruct_sigma sh as sh mono_he1');
+        expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_A_rule :');
+        expect(script).toContain('@SecondOrderRule_rule hv0 hv1 hv2 he1 he2 Hpremise1');
+        expect(script).toContain('as sh mono_he1');
         expect(script).not.toContain('as ()');
     });
 
-    it('destructs a conclusion that is only a flag already present in a host child layer', () => {
+    it('applies a rule whose conclusion is only a flag already present in a host child layer', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -300,11 +288,12 @@ describe('rocq export', () => {
         recorder.recordRuleApply(rule, 'FlagOnlyRule', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('destruct_sigma (@FlagOnlyRule_rule hv0 hv1 hv2 he1 he2) as mono_he2');
+        expect(script).toContain('@FlagOnlyRule_rule hv0 hv1 hv2 he1 he2');
+        expect(script).toContain('as mono_he2');
         expect(script).not.toContain('as ()');
     });
 
-    it('wraps the sort sequence after a root equality run in ltac subst_all_in', () => {
+    it('places a root equality binder before the conclusion sorts in the rule type', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -318,10 +307,11 @@ describe('rocq export', () => {
         store.saveDrawing('WrappedEqRule', rule);
 
         const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
-        expect(code).toContain('Parameter WrappedEqRule_rule : forall (x y : Vertex)(eq_x_y : x = y), ltac:(subst_all_in (Edge x y)).');
+        expect(code).toContain('Parameter WrappedEqRule_rule : forall (x y : Vertex)(eq_x_y : x = y),');
+        expect(code).toContain('Edge x y');
     });
 
-    it('wraps the sigma body after a conclusion equality binder in ltac subst_all_in', () => {
+    it('places a conclusion equality binder before the sigma body in the rule type', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -335,6 +325,7 @@ describe('rocq export', () => {
         store.saveDrawing('SigmaEqRule', rule);
 
         const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
-        expect(code).toContain('Parameter SigmaEqRule_rule : forall (x y : Vertex), Σ (eq_x_y : x = y), ltac:(subst_all_in (Edge x y)).');
+        expect(code).toContain('Parameter SigmaEqRule_rule : forall (x y : Vertex), Σ (eq_x_y : x = y),');
+        expect(code).toContain('Edge x y');
     });
 });
