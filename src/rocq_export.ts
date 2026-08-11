@@ -550,14 +550,7 @@ export function renderExactTerm(elements: LayerElement[], witnessFor: (el: Layer
     if (elements.length === 1) {
         return witnessFor(elements[0]);
     }
-    const binders = elements.slice(0, -1);
-    const runEnd = nextEquationRun(binders);
-    if (runEnd === -1) {
-        return `(${elements.map(witnessFor).join(", ")})`;
-    }
-    const prefix = binders.slice(0, runEnd);
-    const remainder = elements.slice(runEnd);
-    return `(${prefix.map(witnessFor).join(", ")}, ltac:(subst_all_in (${renderExactTerm(remainder, witnessFor)})))`;
+    return `(${elements.map(witnessFor).join(", ")})`;
 }
 
 export interface PremiseInfo {

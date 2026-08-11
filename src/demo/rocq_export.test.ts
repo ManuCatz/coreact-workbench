@@ -383,4 +383,31 @@ describe('rocq export', () => {
         // It might be 'mono_g' depending on NameRegistry specifics, so we check for exact (...).
         expect(script).toContain('exact (');
     });
+
+    it('records an exact proof when a child layer contains equations', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const host = new Drawing(sortStore);
+        const ma = makeVertex(host, 'a');
+        const mb = makeVertex(host, 'b');
+        makeEdge(host, 'g', ma, mb);
+        host.addEqualityArtefactUnchecked([ma, mb], 'root');
+
+        host.addLayer('child', 'Child Layer', 'root');
+        host.addEqualityArtefactUnchecked([ma, mb], 'child');
+        makeEdge(host, 'c', ma, mb, 'child');
+
+        store.saveDrawing('MainDrawing', host);
+
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'MainDrawing', sortStore);
+
+        const result = host.checkLayerProvable('child');
+        expect(result.provable).toBe(true);
+        recorder.recordProveSuccess(host, 'child', result.match ?? null, 'MainDrawing');
+
+        const script = recorder.stop();
+        expect(script).toContain('exact (');
+    });
 });
