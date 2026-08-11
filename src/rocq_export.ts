@@ -53,7 +53,9 @@ export class NameRegistry {
     }
 }
 
-export const SIGMA_DEFINITION = `Definition Sigma {A : Type}(B : A -> Type) := sigT B.`;
+export const SIGMA_DEFINITION = `(* This alias is a workaround of a rocq bug that makes 
+  ltac:(subst_all_in ..) fail *)
+  Definition Sigma {A : Type}(B : A -> Type) := sigT B.`;
 
 export const SIGMA_NOTATION = `Notation "'Σ' x .. y , p" :=
   (Sigma (fun x => .. (Sigma (fun y => p)) ..))
@@ -74,7 +76,7 @@ export const SUBST_ALL_IN_TACTIC = `Tactic Notation "subst_all_in"  uconstr(B)  
   subst_all1;  exact B.`;
 
 export const DESTRUCT_SIGMA_TACTIC = `(* We use ltac2 because in ltac1 it is not be possible 
-to destructure the list of identifiers *)
+to destructure the list of identifiers. destruct_sigma substitutes the equalities *)
 
 Ltac2 rec destruct_sigma_tac (t : constr) (l : ident list) :=
   match l with
