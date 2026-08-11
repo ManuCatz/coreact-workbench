@@ -97,10 +97,9 @@ export class RocqRecorder {
 
         this.lines.push(`Lemma ${lemmaName} : ${info.type}.`);
         if (info.rootElements.some(el => el.kind === "equation")) {
-            this.lines.push("repeat (intros; cbn; subst_all).");
+            this.lines.push("repeat (intros; subst_all ()).");
         } else {
             this.lines.push("intros.");
-            this.lines.push("subst_all.");
         }
 
         this.active = true;
@@ -159,7 +158,7 @@ export class RocqRecorder {
         const tupleValues: string[] = [];
         for (const el of ruleInfo.rootElements) {
             if (el.kind === "equation") {
-                // After the header's `subst_all.` the matched host arguments are
+                // After the header's `subst_all ().` the matched host arguments are
                 // definitionally equal, so the constraint is satisfied by `eq_refl`.
                 tupleValues.push("eq_refl");
                 continue;
@@ -272,20 +271,20 @@ export class RocqRecorder {
             const fullArgsStr = [...tupleValues, ...premiseProofNames].join(" ");
             const assertBase = `assert (${assertName} := @${ruleParam} ${fullArgsStr})`;
             if (conclusionArity <= 1) {
-                this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all.` : `${assertBase}.`);
+                this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all ().` : `${assertBase}.`);
             } else {
-                const destruct = `${assertBase}; destruct ${assertName} as (${conclusionHostNames.join(" & ")})`;
-                this.lines.push(conclusionHasEquality ? `${destruct}; subst_all.` : `${destruct}.`);
+                const destruct = `${assertBase}; destruct_sigma ${assertName} as ${conclusionHostNames.join(" ")}`;
+                this.lines.push(conclusionHasEquality ? `${destruct}; subst_all ().` : `${destruct}.`);
             }
             return;
         }
 
-        const destructBase = `destruct (@${ruleParam} ${argsStr}) as (${conclusionHostNames.join(" & ")})`;
+        const destructBase = `destruct_sigma (@${ruleParam} ${argsStr}) as ${conclusionHostNames.join(" ")}`;
         const assertBase = `assert (${assertName} := @${ruleParam} ${argsStr})`;
         if (conclusionArity <= 1) {
-            this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all.` : `${assertBase}.`);
+            this.lines.push(conclusionHasEquality ? `${assertBase}; subst_all ().` : `${assertBase}.`);
         } else {
-            this.lines.push(conclusionHasEquality ? `${destructBase}; subst_all.` : `${destructBase}.`);
+            this.lines.push(conclusionHasEquality ? `${destructBase}; subst_all ().` : `${destructBase}.`);
         }
     }
 

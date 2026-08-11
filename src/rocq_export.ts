@@ -53,17 +53,47 @@ export class NameRegistry {
     }
 }
 
+export const SIGMA_DEFINITION = `Definition Sigma {A : Type}(B : A -> Type) := sigT B.`;
+
 export const SIGMA_NOTATION = `Notation "'Σ' x .. y , p" :=
-  (sigT (fun x => .. (sigT (fun y => p)) ..))
+  (Sigma (fun x => .. (Sigma (fun y => p)) ..))
   (at level 200, x binder, y binder, right associativity).`;
 
-export const SUBST_ALL_TACTIC = `Ltac subst_all :=
+export const SUBST_ALL_TACTIC = `Ltac subst_all1 :=
   repeat (match goal with 
-     | e : ?x = ?y |- _ => subst x; set (x := y)
+     | e : ?x = ?y |- _ => subst x; set (x := y); cbn
     end). `;
 
+export const SUBST_ALL_LTAC2 = `Ltac2 subst_all () := ltac1:(subst_all1).`;
+
 export const SUBST_ALL_IN_TACTIC = `Tactic Notation "subst_all_in"  uconstr(B)  :=
-  subst_all;  exact B.`;
+  subst_all1;  exact B.`;
+
+export const DESTRUCT_SIGMA_TACTIC = `(* We use ltac2 because in ltac1 it is not be possible 
+to destructure the list of identifiers *)
+
+Ltac2 rec destruct_sigma_tac (t : constr) (l : ident list) :=
+  match l with
+  | [] => ()
+  | [x] =>
+    ltac1:(x t |- assert ( x := t)) (Ltac1.of_ident x) (Ltac1.of_constr t)
+  | x :: q =>
+      let h := Fresh.in_goal @destruct in
+      ltac1:(x t h |- destruct t as [x h]) (Ltac1.of_ident x)
+        (Ltac1.of_constr t) (Ltac1.of_ident h);
+
+      let tx := Constr.type (Control.hyp x) in
+      lazy_match! tx with
+      | _ = _ => ltac1:(h |- subst; cbn in h) (Ltac1.of_ident h)
+      | _ => ()
+      end;
+      destruct_sigma_tac (Control.hyp h) q;
+      clear $h
+      end.
+
+Ltac2 Notation "destruct_sigma"
+    t(constr) "as" l(list1(ident)) :=
+  destruct_sigma_tac t l. `;
 
 function getSort(sortStore: SortStore, name: string): SortDefinition {
     const def = sortStore.getSort(name);
@@ -644,11 +674,19 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
     }
 
     const lines: string[] = [];
+    lines.push("Require Import Ltac2.Ltac2.");
+    lines.push("");
+    lines.push(SIGMA_DEFINITION);
+    lines.push("");
     lines.push(SIGMA_NOTATION);
     lines.push("");
     lines.push(SUBST_ALL_TACTIC);
     lines.push("");
+    lines.push(SUBST_ALL_LTAC2);
+    lines.push("");
     lines.push(SUBST_ALL_IN_TACTIC);
+    lines.push("");
+    lines.push(DESTRUCT_SIGMA_TACTIC);
     lines.push("");
     lines.push("Generalizable All Variables.");
     lines.push("Set Implicit Arguments.");
