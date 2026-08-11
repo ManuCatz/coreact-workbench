@@ -67,6 +67,7 @@ Notation "( x , .. , y , p )" :=
 
 export const SUBST_ALL_TACTIC = `Ltac subst_all1 :=
   repeat (match goal with 
+     | e : _ = _ /\\ _ |- _ =>  destruct e as [e ?]
      | e : ?x = ?y |- _ => subst x; pose (x := y); cbn
     end). `;
 
@@ -376,23 +377,28 @@ export function computeProofFieldNames(
             if (art.dependencies[flagKey] !== true) {
                 continue;
             }
-            const flagLayerId = art.flagLayers?.[flagKey] ?? art.layerId;
+            const rawLayers: string | string[] | undefined = art.flagLayers?.[flagKey];
+            const flagLayerIds: string[] = Array.isArray(rawLayers)
+                ? rawLayers
+                : (rawLayers ? [rawLayers] : [art.layerId]);
             const artefactFieldName = model.fieldNames.get(art.id);
             if (!artefactFieldName) {
                 throw new Error(`Consistency Check Failed: No field assigned for flagged artefact '${labelOf(art)}'.`);
             }
-            const name = registry.unique(`${flagKey}_${artefactFieldName}`);
-            flagFieldNames.set(`${art.id}::${flagKey}`, name);
-            const list = flagFieldsByLayer.get(flagLayerId) ?? [];
-            list.push({
-                layerId: flagLayerId,
-                artefactId: art.id,
-                flagKey,
-                name,
-                type: `${flagKey} ${refFrom(model, flagLayerId, art.id)}`,
-                depFieldNames: art.layerId === flagLayerId ? [artefactFieldName] : []
-            });
-            flagFieldsByLayer.set(flagLayerId, list);
+            for (const flagLayerId of flagLayerIds) {
+                const name = registry.unique(`${flagKey}_${artefactFieldName}`);
+                flagFieldNames.set(`${art.id}::${flagKey}::${flagLayerId}`, name);
+                const list = flagFieldsByLayer.get(flagLayerId) ?? [];
+                list.push({
+                    layerId: flagLayerId,
+                    artefactId: art.id,
+                    flagKey,
+                    name,
+                    type: `${flagKey} ${refFrom(model, flagLayerId, art.id)}`,
+                    depFieldNames: art.layerId === flagLayerId ? [artefactFieldName] : []
+                });
+                flagFieldsByLayer.set(flagLayerId, list);
+            }
         }
     }
 
@@ -418,9 +424,10 @@ export interface LayerElement extends FieldItem {
     kind: "artefact" | "flag" | "equation";
     artefactId?: string;
     flagKey?: string;
+    layerId?: string;
 }
 
-function buildLayerElements(
+export function buildLayerElements(
     savedDrawing: SavedDrawing,
     sortStore: SortStore,
     model: DrawingModel,
@@ -467,7 +474,7 @@ function buildLayerElements(
 
     const flagFields = proofNames.flagFieldsByLayer.get(layerId) ?? [];
     for (const flag of flagFields) {
-        items.push({ name: flag.name, type: flag.type, deps: flag.depFieldNames, kind: "flag", artefactId: flag.artefactId, flagKey: flag.flagKey });
+        items.push({ name: flag.name, type: flag.type, deps: flag.depFieldNames, kind: "flag", artefactId: flag.artefactId, flagKey: flag.flagKey, layerId: flag.layerId });
     }
 
     return topoSortFields(items) as LayerElement[];
@@ -534,6 +541,23 @@ export function renderSigma(elements: LayerElement[]): string {
     const remainder = elements.slice(runEnd);
     const wrappedRest = renderSigma(remainder);
     return `Σ ${renderGroups(binderGroups(prefix))}, ltac:(subst_all_in (${wrappedRest}))`;
+}
+
+export function renderExactTerm(elements: LayerElement[], witnessFor: (el: LayerElement) => string): string {
+    if (elements.length === 0) {
+        return "I";
+    }
+    if (elements.length === 1) {
+        return witnessFor(elements[0]);
+    }
+    const binders = elements.slice(0, -1);
+    const runEnd = nextEquationRun(binders);
+    if (runEnd === -1) {
+        return `(${elements.map(witnessFor).join(", ")})`;
+    }
+    const prefix = binders.slice(0, runEnd);
+    const remainder = elements.slice(runEnd);
+    return `(${prefix.map(witnessFor).join(", ")}, ltac:(subst_all_in (${renderExactTerm(remainder, witnessFor)})))`;
 }
 
 export interface PremiseInfo {
@@ -675,6 +699,7 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
 
     const lines: string[] = [];
     lines.push("Require Import Ltac2.Ltac2.");
+    lines.push("From Ltac2 Require Import Ltac1CompatNotations.");
     lines.push("");
     lines.push(SIGMA_DEFINITION);
     lines.push("");
@@ -751,6 +776,7 @@ export interface DrawingExportNames {
     fieldNames: Map<string, string>;
     flagFieldNames: Map<string, string>;
     equalityFieldNames: Map<string, string>;
+    flagFieldsByLayer: Map<string, FlagField[]>;
     model: DrawingModel;
 }
 
@@ -792,6 +818,7 @@ export function drawingExportNames(savedDrawing: SavedDrawing, sortStore: SortSt
         fieldNames: model.fieldNames,
         flagFieldNames: proofNames.flagFieldNames,
         equalityFieldNames: proofNames.equalityFieldNames,
+        flagFieldsByLayer: proofNames.flagFieldsByLayer,
         model
     };
 }

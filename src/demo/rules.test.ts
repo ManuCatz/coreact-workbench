@@ -59,7 +59,7 @@ describe('applying first-order rules', () => {
         expect(monoEdges[0].getFlagLayer('mono')).toBe('root');
     });
 
-    it('moves the conclusion-layer flag to the host root layer even if the flag exists elsewhere', () => {
+    it('unions the conclusion-layer flag into the host root layer while keeping existing flag layers', () => {
         const rule = buildFlagInChildLayerRule();
         const host = makeDrawing();
         const omv0 = makeVertex(host, 'omv0');
@@ -76,7 +76,27 @@ describe('applying first-order rules', () => {
         const monoEdges = host.getArtefacts().filter(a => a.dependencies['mono'] === true);
         expect(monoEdges.length).toBe(1);
         expect(monoEdges[0].data.label).toBe('ome2');
-        expect(monoEdges[0].getFlagLayer('mono')).toBe('root');
+        expect(monoEdges[0].getFlagLayers('mono')).toEqual(expect.arrayContaining(['root', 'mono-layer']));
+    });
+
+    it('matches and applies a rule whose flag is established in multiple layers', () => {
+        const rule = buildFlagInChildLayerRule();
+        const host = makeDrawing();
+        const mv0 = makeVertex(host, 'mv0');
+        const mv1 = makeVertex(host, 'mv1');
+        const mv2 = makeVertex(host, 'mv2');
+        makeEdge(host, 'me1', mv0, mv1);
+        host.addLayer('extra-layer', 'Extra Layer', 'root');
+        host.addLayer('other-layer', 'Other Layer', 'root');
+        host.newArtefact('Edge', { source: mv1, target: mv2, mono: { __flag: true, layerIds: ['extra-layer', 'other-layer'] } }, { width: 2, bend: 0, label: 'me2' }, 'root');
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+        applyFirstOrderRule(rule, host, apps[0]);
+
+        const monoEdges = host.getArtefacts().filter(a => a.dependencies['mono'] === true);
+        expect(monoEdges.length).toBe(1);
+        expect(monoEdges[0].getFlagLayers('mono')).toEqual(expect.arrayContaining(['extra-layer', 'other-layer', 'root']));
     });
 
     it('adds conclusion equalities that are not already provable in the host', () => {

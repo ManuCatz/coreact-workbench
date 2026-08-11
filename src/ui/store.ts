@@ -52,7 +52,7 @@ export interface DraftArtefact {
     dependencies: Record<string, Artefact | boolean>;
     data: Record<string, any>;
     layerId: string;
-    flagLayers: Record<string, string>;
+    flagLayers: Record<string, string[]>;
 }
 
 export const draftArtefact = writable<DraftArtefact | null>(null);
@@ -176,8 +176,11 @@ export function setDraftLayer(layerId: string): void {
         if (!d) return d;
         d.layerId = layerId;
         const descendants = drawing.getDescendants(layerId);
-        for (const [flagKey, flagLayerId] of Object.entries(d.flagLayers)) {
-            if (!descendants.has(flagLayerId)) {
+        for (const [flagKey, flagLayerIds] of Object.entries(d.flagLayers)) {
+            const surviving = flagLayerIds.filter(flagLayerId => descendants.has(flagLayerId));
+            if (surviving.length > 0) {
+                d.flagLayers[flagKey] = surviving;
+            } else {
                 delete d.flagLayers[flagKey];
             }
         }
@@ -200,13 +203,21 @@ export function toggleDraftFlag(flagKey: string, checked: boolean): void {
     refresh();
 }
 
-export function setDraftFlagLayer(flagKey: string, layerId: string): void {
+export function toggleDraftFlagLayer(flagKey: string, layerId: string): void {
     draftArtefact.update(d => {
         if (!d) return d;
-        if (layerId === d.layerId) {
-            delete d.flagLayers[flagKey];
+        const currentLayers = d.flagLayers[flagKey];
+        const layers = new Set(currentLayers && currentLayers.length > 0 ? currentLayers : [d.layerId]);
+        if (layers.has(layerId)) {
+            layers.delete(layerId);
         } else {
-            d.flagLayers[flagKey] = layerId;
+            layers.add(layerId);
+        }
+        if (layers.size > 0) {
+            d.flagLayers[flagKey] = Array.from(layers);
+        } else {
+            delete d.flagLayers[flagKey];
+            delete d.dependencies[flagKey];
         }
         return d;
     });
@@ -263,10 +274,10 @@ export function createDraftArtefact(): boolean {
     const draft = get(draftArtefact);
     if (!draft) return false;
     try {
-        const finalDeps: Record<string, Artefact | boolean | { __flag: true; layerId: string }> = { ...draft.dependencies };
-        for (const [flagKey, flagLayerId] of Object.entries(draft.flagLayers)) {
+        const finalDeps: Record<string, Artefact | boolean | { __flag: true; layerIds: string[] }> = { ...draft.dependencies };
+        for (const [flagKey, flagLayerIds] of Object.entries(draft.flagLayers)) {
             if (finalDeps[flagKey] === true) {
-                finalDeps[flagKey] = { __flag: true, layerId: flagLayerId };
+                finalDeps[flagKey] = { __flag: true, layerIds: flagLayerIds };
             }
         }
         drawing.newArtefact(draft.sortName, finalDeps, draft.data, draft.layerId);
@@ -423,10 +434,14 @@ export function activeFlagsLabel(art: Artefact): string[] {
     return Object.entries(art.dependencies)
         .filter(([_, val]) => val === true)
         .map(([key]) => {
-            const flagLayerId = art.getFlagLayer(key);
-            if (flagLayerId === art.layerId) return key;
-            const flagLayer = drawing.getLayer(flagLayerId);
-            return `${key}@${flagLayer ? flagLayer.name : flagLayerId}`;
+            const flagLayers = art.getFlagLayers(key);
+            const nonOwn = flagLayers.filter(l => l !== art.layerId);
+            if (nonOwn.length === 0) return key;
+            const layerNames = nonOwn.map(l => {
+                const layer = drawing.getLayer(l);
+                return layer ? layer.name : l;
+            });
+            return `${key}@${layerNames.join(',')}`;
         });
 }
 
@@ -527,6 +542,7 @@ export function setArtefactDataField(art: Artefact, name: string, value: any): v
     } else {
         art.data[name] = value;
     }
+    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -559,11 +575,13 @@ export function setInspectedLabel(art: Artefact, rawLabel: string): void {
             }
         }
     }
+    inspectedArtefact.update(a => a);
     refresh();
 }
 
 export function setArtefactLayer(art: Artefact, targetLayerId: string): void {
     drawing.setArtefactLayer(art, targetLayerId);
+    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -574,15 +592,24 @@ export function setArtefactFlag(art: Artefact, flagKey: string, checked: boolean
         delete art.dependencies[flagKey];
         delete art.flagLayers[flagKey];
     }
+    inspectedArtefact.update(a => a);
     refresh();
 }
 
-export function setArtefactFlagLayer(art: Artefact, flagKey: string, layerId: string): void {
-    if (layerId === art.layerId) {
-        delete art.flagLayers[flagKey];
+export function toggleArtefactFlagLayer(art: Artefact, flagKey: string, layerId: string): void {
+    const layers = new Set(art.getFlagLayers(flagKey));
+    if (layers.has(layerId)) {
+        layers.delete(layerId);
     } else {
-        art.flagLayers[flagKey] = layerId;
+        layers.add(layerId);
     }
+    if (layers.size > 0) {
+        art.flagLayers[flagKey] = Array.from(layers);
+    } else {
+        delete art.flagLayers[flagKey];
+        delete art.dependencies[flagKey];
+    }
+    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -913,7 +940,7 @@ export function checkLayerProvable(layerId: string): void {
             return next;
         });
         if (result.provable) {
-            rocqRecorder.recordProveSuccess(get(activeDrawingName) ?? 'Unsaved Drawing');
+            rocqRecorder.recordProveSuccess(drawing, layerId, result.match ?? null, get(activeDrawingName) ?? 'Unsaved Drawing');
         }
         refresh();
     } catch (err) {

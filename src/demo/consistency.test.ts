@@ -182,9 +182,26 @@ describe('layer provability', () => {
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
 
         pre.dependencies['mono'] = true;
-        pre.flagLayers['mono'] = 'prov-child';
+        pre.flagLayers['mono'] = ['prov-child'];
 
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
+    });
+
+    it('is provable if a flag is established in the layer but also in an ancestor layer', () => {
+        const drawing = makeDrawing();
+        drawing.addLayer('prov-child', 'Prov Child', 'root');
+        const pv0 = makeVertex(drawing, 'pv0');
+        const pv1 = makeVertex(drawing, 'pv1');
+        const pre = makeEdge(drawing, 'pre', pv0, pv1);
+        const pce = drawing.newArtefact('Edge', { source: pv0, target: pv1 }, { width: 2, bend: 0, label: 'pce' }, 'prov-child');
+
+        drawing.addEqualityArtefactUnchecked([pre, pce], 'root');
+
+        // Flag established in root AND prov-child
+        pre.dependencies['mono'] = true;
+        pre.flagLayers['mono'] = ['root', 'prov-child'];
+
+        expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
     });
 
     it('is provable when the parent layer has an artefact with the same dependencies', () => {

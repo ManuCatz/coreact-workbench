@@ -174,7 +174,7 @@ export function buildDemo(ctx: DemoContext): DemoContext {
         console.log("checkLayerProvable('prov-child') without flag (expected provable: true):", JSON.stringify(provNoFlag));
 
         pre.dependencies['mono'] = true;
-        pre.flagLayers['mono'] = 'prov-child';
+        pre.flagLayers['mono'] = ['prov-child'];
 
         const provWithFlag = provDrawing.checkLayerProvable('prov-child');
         console.log("checkLayerProvable('prov-child') with flag on root edge leaving from child layer (expected provable: false):", JSON.stringify(provWithFlag));
@@ -364,10 +364,10 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     if (flagOverwriteApps.length > 0) {
         applyFirstOrderRule(tempFlagOverwriteRule, hostWithOtherMono, flagOverwriteApps[0]);
         const overwrittenMono = hostWithOtherMono.getArtefacts().filter(a => a.dependencies['mono'] === true);
-        console.log('Applied FlagInChildLayer to host with pre-existing mono elsewhere (expected 1 ome2@root):',
-            overwrittenMono.length === 1 && overwrittenMono[0].getFlagLayer('mono') === 'root'
-                ? `${overwrittenMono[0].data.label}@root`
-                : `unexpected (${overwrittenMono.map(e => `${e.data.label}@${e.getFlagLayer('mono')}`).join(', ')})`);
+        console.log('Applied FlagInChildLayer to host with pre-existing mono elsewhere (expected 1 ome2@mono-layer,root):',
+            overwrittenMono.length === 1 && overwrittenMono[0].getFlagLayers('mono').includes('root') && overwrittenMono[0].getFlagLayers('mono').includes('mono-layer')
+                ? `${overwrittenMono[0].data.label}@${overwrittenMono[0].getFlagLayers('mono').join(',')}`
+                : `unexpected (${overwrittenMono.map(e => `${e.data.label}@${e.getFlagLayers('mono').join(',')}`).join(', ')})`);
     }
 
     // Rule whose child layer contains an equality: matching must ignore it
@@ -478,9 +478,9 @@ export function buildDemo(ctx: DemoContext): DemoContext {
             const hostHasSh = soHost.getArtefacts().some(a => a.data.label === 'sh' && a.layerId === 'root');
             console.log(`  Derived drawing contains 'sh' (expected false): ${hasSh}; host root contains 'sh' (expected true): ${hostHasSh}`);
             const hostMonoEdges = soHost.getArtefacts().filter(a => a.dependencies['mono'] === true);
-            const hostMono = hostMonoEdges.length === 1 && hostMonoEdges[0].getFlagLayer('mono') === 'root'
+            const hostMono = hostMonoEdges.length === 1 && hostMonoEdges[0].getFlagLayers('mono').includes('root')
                 ? `${hostMonoEdges[0].data.label}@root`
-                : `unexpected (${hostMonoEdges.map(e => `${e.data.label}@${e.getFlagLayer('mono')}`).join(', ')})`;
+                : `unexpected (${hostMonoEdges.map(e => `${e.data.label}@${e.getFlagLayers('mono').join(',')}`).join(', ')})`;
             console.log(`  Host edges with 'mono' after apply (expected he1@root): ${hostMono}`);
             const derivedMono = dr.drawing.getArtefacts().filter(a => a.dependencies['mono'] === true);
             console.log(`  Derived drawing edges with 'mono' (expected 0): ${derivedMono.length}`);

@@ -82,7 +82,7 @@ export class SortStore {
     }
 }
 
-export type FlagRef = { __flag: true; layerId: string };
+export type FlagRef = { __flag: true; layerIds: string[] } | { __flag: true; layerId: string };
 
 export type ArtefactDependency = Artefact | boolean | FlagRef;
 
@@ -95,7 +95,9 @@ export type ResolvedDependency = Artefact | boolean;
 
 export class Artefact {
     public svgElement: D3Context | null = null; // Store the rendered SVG element
-    public flagLayers: Record<string, string> = {};
+    // A flag may be established in several layers at once; the artefact's own
+    // layer is always implicit and never stored here.
+    public flagLayers: Record<string, string[]> = {};
 
     constructor(
         public sortName: string,
@@ -106,14 +108,24 @@ export class Artefact {
     ) {}
 
     getFlagLayer(flagKey: string): string {
-        return this.flagLayers[flagKey] ?? this.layerId;
+        return this.getFlagLayers(flagKey)[0];
+    }
+
+    getFlagLayers(flagKey: string): string[] {
+        const layers = this.flagLayers[flagKey];
+        if (layers && layers.length > 0) {
+            return Array.from(new Set(layers));
+        }
+        return [this.layerId];
     }
 
     getEffectiveFlagLayers(): Set<string> {
         const layers = new Set<string>();
         for (const [key, val] of Object.entries(this.dependencies)) {
             if (val === true) {
-                layers.add(this.getFlagLayer(key));
+                for (const layer of this.getFlagLayers(key)) {
+                    layers.add(layer);
+                }
             }
         }
         return layers;
@@ -124,7 +136,7 @@ export class Artefact {
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
             if (typeof depArtefact === "boolean") {
                 if (depArtefact === true && isLayerVisible) {
-                    result[key] = isLayerVisible(this.getFlagLayer(key));
+                    result[key] = this.getFlagLayers(key).some(layer => isLayerVisible(layer));
                 } else {
                     result[key] = depArtefact;
                 }
@@ -279,7 +291,7 @@ export class Drawing {
         return checkRuleStructure(Array.from(this.layers.values()));
     }
 
-    public checkLayerProvable(layerId: string): { provable: boolean; reason?: string } {
+    public checkLayerProvable(layerId: string): { provable: boolean; reason?: string; match?: Map<Artefact, Artefact> } {
         const layer = this.layers.get(layerId);
         if (!layer) {
             throw new Error(`Consistency Check Failed: Layer '${layerId}' does not exist.`);
@@ -294,18 +306,25 @@ export class Drawing {
 
         const labelOf = (a: Artefact): string => (typeof a.data.label === "string" ? a.data.label : a.sortName);
 
+        const parentAncestors = this.getAncestors(parentId);
         const layerFlagScope = this.getDescendants(layerId);
 
         for (const art of this.artefacts) {
             for (const [flagKey, flagVal] of Object.entries(art.dependencies)) {
                 if (flagVal === true) {
-                    const flagLayer = art.getFlagLayer(flagKey);
-                    if (layerFlagScope.has(flagLayer)) {
-                        const flagLayerName = this.layers.get(flagLayer)?.name || flagLayer;
-                        return {
-                            provable: false,
-                            reason: `Flag '${flagKey}' on artefact '${labelOf(art)}' (${art.sortName}) is established in layer '${flagLayerName}', within layer '${layer.name}' or its descendants; the layer is not provable in parent layer '${parentName}'.`
-                        };
+                    const flagLayers = art.getFlagLayers(flagKey);
+                    const parentSeesFlag = flagLayers.some(l => parentAncestors.has(l));
+
+                    if (!parentSeesFlag) {
+                        for (const flagLayer of flagLayers) {
+                            if (layerFlagScope.has(flagLayer)) {
+                                const flagLayerName = this.layers.get(flagLayer)?.name || flagLayer;
+                                return {
+                                    provable: false,
+                                    reason: `Flag '${flagKey}' on artefact '${labelOf(art)}' (${art.sortName}) is established in layer '${flagLayerName}', within layer '${layer.name}' or its descendants; the layer is not provable in parent layer '${parentName}'.`
+                                };
+                            }
+                        }
                     }
                 }
             }
@@ -428,7 +447,7 @@ export class Drawing {
         };
 
         if (backtrack(0)) {
-            return { provable: true };
+            return { provable: true, match: new Map(assignment) };
         }
 
         return {
@@ -543,8 +562,11 @@ export class Drawing {
 
         // Reset any surviving flag whose layer was deleted to the artefact's own layer
         for (const art of this.artefacts) {
-            for (const [flagKey, flagLayer] of Object.entries(art.flagLayers)) {
-                if (descendants.has(flagLayer)) {
+            for (const [flagKey, flagLayerArr] of Object.entries(art.flagLayers)) {
+                const surviving = flagLayerArr.filter(flagLayer => !descendants.has(flagLayer));
+                if (surviving.length > 0) {
+                    art.flagLayers[flagKey] = surviving;
+                } else {
                     delete art.flagLayers[flagKey];
                 }
             }
@@ -593,10 +615,22 @@ export class Drawing {
             }
         }
 
-        // Check flags: a set flag must leave from the new layer or one of its descendants
+        // Drop old own layer if explicitly stored, since the artefact is moving to targetLayerId.
+        for (const [flagKey, flagLayerArr] of Object.entries(artefact.flagLayers)) {
+            const withoutOldOwn = flagLayerArr.filter(l => l !== artefact.layerId);
+            if (withoutOldOwn.length > 0) {
+                artefact.flagLayers[flagKey] = withoutOldOwn;
+            } else {
+                delete artefact.flagLayers[flagKey];
+            }
+        }
+
+        // Check flags: each set flag must leave from the new layer or one of its descendants
         for (const [flagKey, flagValue] of Object.entries(artefact.dependencies)) {
             if (flagValue === true) {
-                this.validateFlagLayer(artefact.getFlagLayer(flagKey), targetLayerId, flagKey);
+                for (const flagLayer of artefact.getFlagLayers(flagKey)) {
+                    this.validateFlagLayer(flagLayer, targetLayerId, flagKey);
+                }
             }
         }
 
@@ -939,15 +973,21 @@ export class Drawing {
             }
         }
 
-        // 3. Normalize flag references ({ layerId }) into booleans + flagLayers entries
+        // 3. Normalize flag references ({ layerIds }) into booleans + flagLayers entries
         const normalizedDeps: Record<string, Artefact | boolean> = {};
-        const flagLayers: Record<string, string> = {};
+        const flagLayers: Record<string, string[]> = {};
         for (const [depKey, providedValue] of Object.entries(dependencies)) {
             const expectedSortName = sortDef.dependencies[depKey];
             if (expectedSortName === "flag" && this.isFlagRef(providedValue)) {
-                this.validateFlagLayer(providedValue.layerId, targetLayerId, depKey);
+                const layerIds = this.flagRefLayerIds(providedValue);
+                for (const layerId of layerIds) {
+                    this.validateFlagLayer(layerId, targetLayerId, depKey);
+                }
                 normalizedDeps[depKey] = true;
-                flagLayers[depKey] = providedValue.layerId;
+                const layers = Array.from(new Set(layerIds));
+                if (layers.length > 0) {
+                    flagLayers[depKey] = layers;
+                }
             } else {
                 normalizedDeps[depKey] = providedValue as Artefact | boolean;
             }
@@ -961,7 +1001,19 @@ export class Drawing {
     }
 
     private isFlagRef(value: unknown): value is FlagRef {
-        return typeof value === "object" && value !== null && (value as FlagRef).__flag === true && typeof (value as FlagRef).layerId === "string";
+        if (typeof value !== "object" || value === null) return false;
+        const v = value as { __flag?: unknown; layerId?: unknown; layerIds?: unknown };
+        if (v.__flag !== true) return false;
+        if (typeof v.layerId === "string") return true;
+        if (Array.isArray(v.layerIds) && v.layerIds.every(l => typeof l === "string")) return true;
+        return false;
+    }
+
+    private flagRefLayerIds(value: FlagRef): string[] {
+        if ("layerIds" in value) {
+            return value.layerIds;
+        }
+        return [value.layerId];
     }
 
     private validateFlagLayer(flagLayerId: string, artefactLayerId: string, flagKey: string): void {
@@ -1073,7 +1125,11 @@ export class Drawing {
         const set2 = dep2 === true;
         if (set1 !== set2) return false;
         if (!set1) return true;
-        return a1.getFlagLayer(flagKey) === a2.getFlagLayer(flagKey);
+        const layers1 = a1.getFlagLayers(flagKey);
+        const layers2 = a2.getFlagLayers(flagKey);
+        if (layers1.length !== layers2.length) return false;
+        const set = new Set(layers1);
+        return layers2.every(layer => set.has(layer));
     }
 
     public areDependenciesEqual(a1: Artefact, a2: Artefact): boolean {
@@ -1227,7 +1283,7 @@ export interface ArtefactData {
     layerId: string;
     dependencies: Record<string, string | boolean>;
     data: Record<string, any>;
-    flagLayers?: Record<string, string>;
+    flagLayers?: Record<string, string[]>;
 }
 
 export interface SavedDrawing {
@@ -1406,7 +1462,8 @@ export class DrawingStore {
                 if (ready) {
                     for (const [flagKey, flagLayer] of Object.entries(artData.flagLayers ?? {})) {
                         if (resolvedDeps[flagKey] === true) {
-                            resolvedDeps[flagKey] = { __flag: true, layerId: flagLayer };
+                            const layerIds = Array.isArray(flagLayer) ? flagLayer : [flagLayer];
+                            resolvedDeps[flagKey] = { __flag: true, layerIds };
                         }
                     }
                     const newArt = drawing.newArtefact(
@@ -1497,8 +1554,17 @@ export class DrawingStore {
             if (!art || typeof art.id !== "string" || typeof art.sortName !== "string" || typeof art.layerId !== "string" || !art.dependencies || typeof art.dependencies !== "object" || !art.data || typeof art.data !== "object") {
                 throw new Error("Consistency Check Failed: Invalid artefact structure in imported drawing.");
             }
-            if (art.flagLayers !== undefined && (typeof art.flagLayers !== "object" || art.flagLayers === null || Array.isArray(art.flagLayers))) {
-                throw new Error("Consistency Check Failed: Invalid flagLayers structure in imported drawing.");
+            if (art.flagLayers !== undefined) {
+                if (typeof art.flagLayers !== "object" || art.flagLayers === null || Array.isArray(art.flagLayers)) {
+                    throw new Error("Consistency Check Failed: Invalid flagLayers structure in imported drawing.");
+                }
+                for (const val of Object.values(art.flagLayers as Record<string, unknown>)) {
+                    const valid = typeof val === "string" ||
+                        (Array.isArray(val) && val.every(l => typeof l === "string"));
+                    if (!valid) {
+                        throw new Error("Consistency Check Failed: Invalid flag layer value in imported drawing.");
+                    }
+                }
             }
         }
 
@@ -1710,23 +1776,22 @@ function findRuleApplicationsInternal(
             for (const [k, dep] of Object.entries(a.dependencies)) {
                 if (typeof dep === "boolean") {
                     if (dep === true) {
-                        // A flag leaving from a non-root layer belongs to the rule's
-                        // child-layer structure, not the root pattern: it must not
-                        // constrain matching.
-                        if (!ruleRootLayerIds.has(a.getFlagLayer(k))) {
+                        // Flags leaving from a non-root layer belong to the rule's
+                        // child-layer structure, not the root pattern: they must not
+                        // constrain matching. Only root-layer flag layers constrain.
+                        const rootFlagLayers = a.getFlagLayers(k).filter(l => ruleRootLayerIds.has(l));
+                        if (rootFlagLayers.length === 0) {
                             continue;
                         }
                         if (cand.dependencies[k] !== true) {
                             ok = false;
                             break;
                         }
-                        // Flag leaves from the rule root layer: require the same relative
-                        // depth between the flag's layer and the artefact's layer.
-                        const patternFlagLayer = a.getFlagLayer(k);
-                        const hostFlagLayer = cand.getFlagLayer(k);
-                        const patternRelative = rule.getLayerDepth(patternFlagLayer) - rule.getLayerDepth(a.layerId);
-                        const hostRelative = host.getLayerDepth(hostFlagLayer) - host.getLayerDepth(cand.layerId);
-                        if (patternRelative !== hostRelative) {
+                        // A flag leaves from the rule root layer: require the same
+                        // relative depth between the flag's layer and the artefact's layer.
+                        const patternRelative = rule.getLayerDepth(rootFlagLayers[0]) - rule.getLayerDepth(a.layerId);
+                        const hostRelative = cand.getFlagLayers(k).map(l => host.getLayerDepth(l) - host.getLayerDepth(cand.layerId));
+                        if (!hostRelative.includes(patternRelative)) {
                             ok = false;
                             break;
                         }
@@ -1874,10 +1939,15 @@ function artefactChildren(art: Artefact): Artefact[] {
 }
 
 function remapFlagLayers(source: Artefact, target: Artefact, targetDrawing: Drawing, layerMap: Record<string, string>): void {
-    for (const [flagKey, flagLayer] of Object.entries(source.flagLayers)) {
-        const mapped = layerMap[flagLayer] ?? flagLayer;
-        if (targetDrawing.getLayer(mapped) && targetDrawing.getDescendants(target.layerId).has(mapped)) {
-            target.flagLayers[flagKey] = mapped;
+    for (const [flagKey, flagLayerArr] of Object.entries(source.flagLayers)) {
+        const mapped = flagLayerArr.map(flagLayer => layerMap[flagLayer] ?? flagLayer);
+        const kept = Array.from(new Set(mapped)).filter(flagLayer =>
+            flagLayer !== target.layerId &&
+            !!targetDrawing.getLayer(flagLayer) &&
+            targetDrawing.getDescendants(target.layerId).has(flagLayer)
+        );
+        if (kept.length > 0) {
+            target.flagLayers[flagKey] = kept;
         }
     }
 }
@@ -1888,7 +1958,7 @@ function computeConclusionFlags(rule: Drawing, ruleRoot: Layer, childLayer: Laye
         if (a.layerId !== ruleRoot.id) continue;
         for (const [key, dep] of Object.entries(a.dependencies)) {
             if (dep !== true) continue;
-            if (a.getFlagLayer(key) !== childLayer.id) continue;
+            if (!a.getFlagLayers(key).includes(childLayer.id)) continue;
             const img = match.get(a);
             if (!img) continue;
             if (!result.has(img)) result.set(img, new Set());
@@ -1924,7 +1994,13 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
     for (const [img, keys] of conclusionFlags) {
         for (const key of keys) {
             img.dependencies[key] = true;
-            img.flagLayers[key] = hostRootId;
+            const current = img.getFlagLayers(key);
+            const next = Array.from(new Set([...current, hostRootId]));
+            if (next.length > 0) {
+                img.flagLayers[key] = next;
+            } else {
+                delete img.flagLayers[key];
+            }
         }
     }
 

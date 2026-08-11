@@ -18,13 +18,13 @@
         isDraftComplete,
         setDraftLayer,
         setDraftDataField,
-        setDraftFlagLayer,
+        toggleDraftFlagLayer,
         toggleDraftFlag,
         setArtefactLayer,
         setInspectedLabel,
         setArtefactDataField,
         setArtefactFlag,
-        setArtefactFlagLayer,
+        toggleArtefactFlagLayer,
         startMergeMode,
         togglePositionPicker,
         isPositionPickerActive,
@@ -349,7 +349,6 @@
                 <h4 style="margin: 15px 0 5px 0; font-size: 0.95rem; color: #444;">Flags</h4>
                 {#each flagDeps as [flagKey]}
                     {@const flagActive = draft.dependencies[flagKey] === true}
-                    {@const flagLayerId = draft.flagLayers[flagKey] ?? draft.layerId}
                     <div class="form-group checkbox flag-row">
                         <input
                             id="draft-flag-{flagKey}"
@@ -358,18 +357,28 @@
                             onchange={(e) => toggleDraftFlag(flagKey, (e.currentTarget as HTMLInputElement).checked)}
                         />
                         <label for="draft-flag-{flagKey}">{flagKey}</label>
-                        {#if flagActive}
-                            <select
-                                class="flag-layer-select"
-                                value={flagLayerId}
-                                onchange={(e) => setDraftFlagLayer(flagKey, (e.currentTarget as HTMLSelectElement).value)}
-                            >
-                                {#each flagLayerCandidates(draft.layerId) as candidateId}
-                                    <option value={candidateId}>{drawing.getLayer(candidateId)?.name ?? candidateId}</option>
-                                {/each}
-                            </select>
-                        {/if}
                     </div>
+                    {#if flagActive}
+                        <div class="form-group flag-layers">
+                            <div style="font-size: 0.78rem; color: #666; font-style: italic; margin-bottom: 4px;">
+                                Visible in layer(s) (unchecking all removes flag):
+                            </div>
+                            {#each flagLayerCandidates(draft.layerId) as candidateId}
+                                {@const isOwn = candidateId === draft.layerId}
+                                {@const stored = draft.flagLayers[flagKey]}
+                                {@const activeLayers = (stored && stored.length > 0) ? stored : [draft.layerId]}
+                                {@const isChecked = activeLayers.includes(candidateId)}
+                                <label class="flag-layer-check">
+                                    <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onchange={() => toggleDraftFlagLayer(flagKey, candidateId)}
+                                    />
+                                    {drawing.getLayer(candidateId)?.name ?? candidateId}{isOwn ? ' (own)' : ''}
+                                </label>
+                            {/each}
+                        </div>
+                    {/if}
                 {/each}
             {/if}
 
@@ -496,7 +505,6 @@
                 <h4 style="margin-top: 15px; margin-bottom: 10px; font-size: 0.95rem; color: #444;">Flags</h4>
                 {#each artFlagDeps as [flagKey]}
                     {@const flagActive = art.dependencies[flagKey] === true}
-                    {@const flagLayerId = art.getFlagLayer(flagKey)}
                     <div class="form-group checkbox flag-row">
                         <input
                             id="inspect-flag-{flagKey}"
@@ -505,18 +513,26 @@
                             onchange={(e) => setArtefactFlag(art, flagKey, (e.currentTarget as HTMLInputElement).checked)}
                         />
                         <label for="inspect-flag-{flagKey}">{flagKey}</label>
-                        {#if flagActive}
-                            <select
-                                class="flag-layer-select"
-                                value={flagLayerId}
-                                onchange={(e) => setArtefactFlagLayer(art, flagKey, (e.currentTarget as HTMLSelectElement).value)}
-                            >
-                                {#each flagLayerCandidates(art.layerId) as candidateId}
-                                    <option value={candidateId}>{drawing.getLayer(candidateId)?.name ?? candidateId}</option>
-                                {/each}
-                            </select>
-                        {/if}
                     </div>
+                    {#if flagActive}
+                        <div class="form-group flag-layers">
+                            <div style="font-size: 0.78rem; color: #666; font-style: italic; margin-bottom: 4px;">
+                                Visible in layer(s) (unchecking all removes flag):
+                            </div>
+                            {#each flagLayerCandidates(art.layerId) as candidateId}
+                                {@const isOwn = candidateId === art.layerId}
+                                {@const isChecked = art.getFlagLayers(flagKey).includes(candidateId)}
+                                <label class="flag-layer-check">
+                                    <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onchange={() => toggleArtefactFlagLayer(art, flagKey, candidateId)}
+                                    />
+                                    {drawing.getLayer(candidateId)?.name ?? candidateId}{isOwn ? ' (own)' : ''}
+                                </label>
+                            {/each}
+                        </div>
+                    {/if}
                 {/each}
             {/if}
 

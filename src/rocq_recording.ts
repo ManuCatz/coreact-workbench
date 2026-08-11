@@ -1,6 +1,6 @@
 import { Artefact, Drawing, DrawingStore, SortStore } from "./index";
-import { drawingExportNames, ruleTypeInfo, newExportRegistry, renderForallChain, renderSigma, sanitizeIdent } from "./rocq_export";
-import type { LayerElement } from "./rocq_export";
+import { drawingExportNames, ruleTypeInfo, newExportRegistry, renderExactTerm, renderForallChain, renderSigma, sanitizeIdent } from "./rocq_export";
+import type { DrawingExportNames, LayerElement, RuleTypeInfo } from "./rocq_export";
 
 function artefactToDataId(drawing: Drawing, art: Artefact): string {
     const idx = drawing.getArtefacts().indexOf(art);
@@ -8,6 +8,17 @@ function artefactToDataId(drawing: Drawing, art: Artefact): string {
         throw new Error("Consistency Check Failed: Artefact does not belong to drawing.");
     }
     return `art_${idx}`;
+}
+
+function resolveHostFlagFieldName(hostNames: DrawingExportNames, hostId: string, flagKey: string): string | undefined {
+    // A rule flag element at relative depth 0 (own-layer) or a conclusion flag is
+    // realised on the host artefact's own layer, so the per-layer proof field is
+    // keyed by that layer id.
+    const hostArtefact = hostNames.model.artefactById.get(hostId);
+    if (!hostArtefact) {
+        return undefined;
+    }
+    return hostNames.flagFieldNames.get(`${hostId}::${flagKey}::${hostArtefact.layerId}`);
 }
 
 function escapeRegExp(s: string): string {
@@ -64,6 +75,9 @@ function renderPremiseLemmaType(
 export class RocqRecorder {
     private active: boolean = false;
     private drawingName: string | null = null;
+    private conclusionLayerId: string | null = null;
+    private ruleInfo: RuleTypeInfo | null = null;
+    private sortStore: SortStore | null = null;
     private lines: string[] = [];
     private prelude: string[] = [];
     private preludeLemmas: Set<string> = new Set();
@@ -78,6 +92,7 @@ export class RocqRecorder {
 
     public start(drawing: Drawing, activeDrawingName: string, sortStore: SortStore): void {
         this.drawingName = activeDrawingName;
+        this.sortStore = sortStore;
         this.lines = [];
         this.prelude = [];
         this.preludeLemmas = new Set();
@@ -94,6 +109,8 @@ export class RocqRecorder {
         const registry = newExportRegistry(sortStore);
         const info = ruleTypeInfo(savedDrawing, sortStore, registry, { reserveParam: false, includePremises: false });
         const lemmaName = `${moduleName}_rule`;
+        this.conclusionLayerId = info.conclusionLayerId;
+        this.ruleInfo = info;
 
         this.lines.push(`Lemma ${lemmaName} : ${info.type}.`);
         if (info.rootElements.some(el => el.kind === "equation")) {
@@ -172,7 +189,10 @@ export class RocqRecorder {
                 throw new Error(`Consistency Check Failed: Pattern artefact '${artefactId}' was not matched in rule application.`);
             }
             if (el.kind === "flag") {
-                const hostFlagName = hostNames.flagFieldNames.get(`${matchedHostId}::${el.flagKey}`);
+                if (!el.flagKey) {
+                    throw new Error(`Consistency Check Failed: Rule element '${el.name}' in '${savedRuleName}' has no flag key.`);
+                }
+                const hostFlagName = resolveHostFlagFieldName(hostNames, matchedHostId, el.flagKey);
                 if (!hostFlagName) {
                     throw new Error(`Consistency Check Failed: No flag field name for '${el.flagKey}' on artefact '${artefactId}' in rule '${savedRuleName}'.`);
                 }
@@ -200,6 +220,9 @@ export class RocqRecorder {
         const conclusionHostNames = ruleInfo.conclusionElements.map(el => {
             const ruleArt = el.artefactId ? ruleArtById.get(el.artefactId) : undefined;
             if (el.kind === "flag") {
+                if (!el.flagKey) {
+                    throw new Error(`Consistency Check Failed: Conclusion element '${el.name}' in rule '${savedRuleName}' has no flag key.`);
+                }
                 let hostId = matchMap.get(el.artefactId ?? "");
                 if (!hostId && ruleArt) {
                     const hostCopy = applicationResult.created.get(ruleArt);
@@ -207,7 +230,7 @@ export class RocqRecorder {
                         hostId = artefactToDataId(hostDrawing, hostCopy);
                     }
                 }
-                const hostFlagName = hostId ? hostNames.flagFieldNames.get(`${hostId}::${el.flagKey}`) : undefined;
+                const hostFlagName = hostId ? resolveHostFlagFieldName(hostNames, hostId, el.flagKey) : undefined;
                 if (!hostFlagName) {
                     throw new Error(`Consistency Check Failed: No host flag field name for '${el.flagKey}' on '${el.name}' in rule '${savedRuleName}'.`);
                 }
@@ -293,11 +316,81 @@ export class RocqRecorder {
         }
     }
 
-    public recordProveSuccess(hostActiveName: string): void {
+    public recordProveSuccess(hostDrawing: Drawing, layerId: string | null, match: Map<Artefact, Artefact> | null, hostActiveName: string): void {
         if (!this.active || hostActiveName !== this.drawingName) {
             return;
         }
-        this.lines.push("repeat constructor; eassumption.");
+
+        if (this.conclusionLayerId === null) {
+            this.lines.push("exact I.");
+            return;
+        }
+
+        if (layerId !== this.conclusionLayerId) {
+            throw new Error(`Consistency Check Failed: Recording rule for drawing '${this.drawingName}' has conclusion layer '${this.conclusionLayerId}', cannot prove layer '${layerId}'.`);
+        }
+        if (!match) {
+            throw new Error(`Consistency Check Failed: Recording rule for drawing '${this.drawingName}' has conclusion layer '${this.conclusionLayerId}' and requires a successful match to produce an exact proof term.`);
+        }
+
+        const ruleInfo = this.ruleInfo;
+        if (!ruleInfo) {
+            throw new Error("Consistency Check Failed: No export info available; start a recording before proving a layer.");
+        }
+
+        const savedHost = DrawingStore.drawingToSavedDrawing(hostActiveName, hostDrawing);
+        const hostNames = drawingExportNames(savedHost, this.sortStore!);
+
+        const idToLiveArt = new Map<string, Artefact>();
+        for (const art of hostDrawing.getArtefacts()) {
+            idToLiveArt.set(artefactToDataId(hostDrawing, art), art);
+        }
+
+        const witnessFor = (el: LayerElement): string => {
+            switch (el.kind) {
+                case "artefact": {
+                    const live = el.artefactId ? idToLiveArt.get(el.artefactId) : undefined;
+                    const parent = live ? match.get(live) : undefined;
+                    if (!parent) {
+                        throw new Error(`Consistency Check Failed: No host parent matched for artefact '${el.artefactId}' in conclusion layer '${this.conclusionLayerId}'.`);
+                    }
+                    const parentDataId = artefactToDataId(hostDrawing, parent);
+                    const hostFieldName = hostNames.fieldNames.get(parentDataId);
+                    if (!hostFieldName) {
+                        throw new Error(`Consistency Check Failed: Matched parent for '${el.artefactId}' has no assigned field name in '${this.drawingName}'.`);
+                    }
+                    return hostFieldName;
+                }
+                case "equation": {
+                    const artData = el.artefactId ? ruleInfo.model.artefactById.get(el.artefactId) : undefined;
+                    const childCount = artData ? Object.values(artData.dependencies).filter(v => typeof v === "string").length : 2;
+                    const eqCount = Math.max(1, childCount - 1);
+                    let w = "eq_refl";
+                    for (let i = 1; i < eqCount; i++) {
+                        w = `conj eq_refl (${w})`;
+                    }
+                    return w;
+                }
+                case "flag": {
+                    if (!el.flagKey) {
+                        throw new Error(`Consistency Check Failed: Flag element '${el.name}' has no flagKey.`);
+                    }
+                    const live = el.artefactId ? idToLiveArt.get(el.artefactId) : undefined;
+                    const parent = live ? (live.layerId === this.conclusionLayerId ? match.get(live) : live) : undefined;
+                    if (!parent) {
+                        throw new Error(`Consistency Check Failed: No host parent matched for flagged artefact '${el.artefactId}' in conclusion layer '${this.conclusionLayerId}'.`);
+                    }
+                    const parentDataId = artefactToDataId(hostDrawing, parent);
+                    const hostFlagName = resolveHostFlagFieldName(hostNames, parentDataId, el.flagKey);
+                    if (!hostFlagName) {
+                        throw new Error(`Consistency Check Failed: Matched parent for flagged artefact '${el.artefactId}' has no corresponding flag '${el.flagKey}' in '${this.drawingName}'.`);
+                    }
+                    return hostFlagName;
+                }
+            }
+        };
+
+        this.lines.push(`exact ${renderExactTerm(ruleInfo.conclusionElements, witnessFor)}.`);
     }
 
     public stop(): string {
@@ -310,6 +403,8 @@ export class RocqRecorder {
         this.prelude = [];
         this.preludeLemmas = new Set();
         this.drawingName = null;
+        this.conclusionLayerId = null;
+        this.ruleInfo = null;
         return script;
     }
 }

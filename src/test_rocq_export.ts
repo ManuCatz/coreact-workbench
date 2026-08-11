@@ -156,7 +156,11 @@ if (eqApps.length === 0) {
 const createdEq = applyFirstOrderRule(eqRule, mainDrawing, eqApps[0]);
 recorder.recordRuleApply(eqRule, "EqRule", eqApps[0], mainDrawing, createdEq, "MainDrawing", sortStore);
 
-recorder.recordProveSuccess("MainDrawing");
+const provableResult = mainDrawing.checkLayerProvable("child");
+if (!provableResult.provable) {
+    throw new Error("MainDrawing child layer not provable: " + (provableResult.reason ?? "unknown"));
+}
+recorder.recordProveSuccess(mainDrawing, "child", provableResult.match ?? null, "MainDrawing");
 const recordingScript = recorder.stop();
 
 const exportCode = exportDrawingsToRocq(store.getAllDrawings(), sortStore);

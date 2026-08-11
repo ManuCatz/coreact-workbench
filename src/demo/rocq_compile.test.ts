@@ -51,7 +51,7 @@ function recordScenario(sortStore: SortStore, scenario: BuiltScenario): string {
         applyResult = applyFirstOrderRule(scenario.rule, scenario.host, scenario.apps[0]);
     }
     recorder.recordRuleApply(scenario.rule, scenario.ruleName, scenario.apps[0], scenario.host, applyResult, 'Main', sortStore);
-    recorder.recordProveSuccess('Main');
+    recorder.recordProveSuccess(scenario.host, null, null, 'Main');
     const script = recorder.stop();
     return exportDrawingsToRocq(store.getAllDrawings(), sortStore) + '\n' + script;
 }
@@ -114,14 +114,29 @@ function buildSecondOrder(sortStore: SortStore): BuiltScenario {
     return { host, rule, ruleName: 'SecondOrderRule', secondOrder: true, apps };
 }
 
+function buildProvableChild(sortStore: SortStore): Drawing {
+    const host = new Drawing(sortStore);
+    const a = makeVertex(host, 'a');
+    const b = makeVertex(host, 'b');
+    const c = makeVertex(host, 'c');
+    makeEdge(host, 'e1', a, b);
+    makeEdge(host, 'e2', b, c);
+    host.newEqualityArtefact([a, b], 'root');
+    host.newEqualityArtefact([b, c], 'root');
+    host.addLayer('child', 'Child Layer', 'root');
+    makeEdge(host, 'g1', a, b, 'child');
+    makeEdge(host, 'g2', b, c, 'child');
+    host.newEqualityArtefact([a, b, c], 'child');
+    return host;
+}
+
 function buildFlagOnlyConclusion(sortStore: SortStore): BuiltScenario {
     const host = new Drawing(sortStore);
     const hv0 = makeVertex(host, 'hv0');
     const hv1 = makeVertex(host, 'hv1');
     const hv2 = makeVertex(host, 'hv2');
     makeEdge(host, 'he1', hv0, hv1);
-    host.addLayer('mono-layer', 'Mono Layer', 'root');
-    host.newArtefact('Edge', { source: hv1, target: hv2, mono: { __flag: true, layerId: 'mono-layer' } }, { width: 2, bend: 0, label: 'he2' }, 'root');
+    makeEdge(host, 'he2', hv1, hv2);
     const rule = new Drawing(sortStore);
     const fv0 = makeVertex(rule, 'fv0');
     const fv1 = makeVertex(rule, 'fv1');
@@ -165,6 +180,21 @@ describe.skipIf(!rocqAvailable)('rocq export compiles', () => {
     ])('compiles $name', ({ name, build }) => {
         const sortStore = newSortStore();
         compile(name, recordScenario(sortStore, build(sortStore)));
+    });
+
+    it('compiles a provable child layer with a tuple and equality conclusion', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+        const host = buildProvableChild(sortStore);
+        const result = host.checkLayerProvable('child');
+        expect(result.provable).toBe(true);
+
+        store.saveDrawing('Main', host);
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'Main', sortStore);
+        recorder.recordProveSuccess(host, 'child', result.match ?? null, 'Main');
+        const script = recorder.stop();
+        compile('provable_child', exportDrawingsToRocq(store.getAllDrawings(), sortStore) + '\n' + script);
     });
 
     it('compiles a host with several sequential rule applications', () => {
@@ -254,7 +284,11 @@ describe.skipIf(!rocqAvailable)('rocq export compiles', () => {
         }
         recorder.recordRuleApply(eqRule, 'EqRule', eqApps[0], host, applyFirstOrderRule(eqRule, host, eqApps[0]), 'Main', sortStore);
 
-        recorder.recordProveSuccess('Main');
+        const childResult = host.checkLayerProvable('child');
+        if (!childResult.provable) {
+            throw new Error('child layer not provable: ' + (childResult.reason ?? 'unknown'));
+        }
+        recorder.recordProveSuccess(host, 'child', childResult.match ?? null, 'Main');
         const script = recorder.stop();
         compile('main', exportDrawingsToRocq(store.getAllDrawings(), sortStore) + '\n' + script);
     });

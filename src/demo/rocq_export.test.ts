@@ -50,7 +50,7 @@ describe('rocq export', () => {
         expect(apps.length).toBe(1);
         const created = applyFirstOrderRule(rule, host, apps[0]);
         recorder.recordRuleApply(rule, 'Foo', apps[0], host, created, 'MainDrawing', sortStore);
-        recorder.recordProveSuccess('MainDrawing');
+        recorder.recordProveSuccess(host, null, null, 'MainDrawing');
         const script = recorder.stop();
 
         expect(script).toContain('Lemma MainDrawing_rule :');
@@ -210,7 +210,7 @@ describe('rocq export', () => {
         expect(apps.length).toBe(1);
         const created = applyFirstOrderRule(rule, host, apps[0]);
         recorder.recordRuleApply(rule, 'ArgOrderRule', apps[0], host, created, 'MainDrawing', sortStore);
-        recorder.recordProveSuccess('MainDrawing');
+        recorder.recordProveSuccess(host, null, null, 'MainDrawing');
         const script = recorder.stop();
 
         expect(script).toContain('@ArgOrderRule_rule a b c eq_refl mw mono_mw');
@@ -327,5 +327,60 @@ describe('rocq export', () => {
         const code = exportDrawingsToRocq(store.getAllDrawings(), sortStore);
         expect(code).toContain('Parameter SigmaEqRule_rule : forall (x y : Vertex), Σ (eq_x_y : x = y),');
         expect(code).toContain('Edge x y');
+    });
+
+    it('records an exact proof of a provable child layer, naming the matched parent', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const host = new Drawing(sortStore);
+        const ma = makeVertex(host, 'a');
+        const mb = makeVertex(host, 'b');
+        makeEdge(host, 'g', ma, mb);
+        host.addLayer('child', 'Child Layer', 'root');
+        makeEdge(host, 'c', ma, mb, 'child');
+        store.saveDrawing('MainDrawing', host);
+
+        const result = host.checkLayerProvable('child');
+        expect(result.provable).toBe(true);
+
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'MainDrawing', sortStore);
+        recorder.recordProveSuccess(host, 'child', result.match ?? null, 'MainDrawing');
+        const script = recorder.stop();
+
+        expect(script).toContain('exact g.');
+    });
+
+    it('records an exact proof for a child layer containing a flag established in the parent', () => {
+        const sortStore = newSortStore();
+        const store = new DrawingStore();
+
+        const host = new Drawing(sortStore);
+        const ma = makeVertex(host, 'a');
+        const mb = makeVertex(host, 'b');
+        const me = makeEdge(host, 'g', ma, mb);
+        
+        host.addLayer('child', 'Child Layer', 'root');
+        const ce = host.newArtefact('Edge', { source: ma, target: mb }, { width: 2, bend: 0, label: 'c' }, 'child');
+        host.addEqualityArtefactUnchecked([me, ce], 'child');
+
+        // Flag established in root AND child
+        me.dependencies['mono'] = true;
+        me.flagLayers['mono'] = ['root', 'child'];
+        
+        store.saveDrawing('MainDrawing', host);
+
+        const recorder = new RocqRecorder();
+        recorder.start(host, 'MainDrawing', sortStore);
+        
+        const result = host.checkLayerProvable('child');
+        expect(result.provable).toBe(true);
+        recorder.recordProveSuccess(host, 'child', result.match ?? null, 'MainDrawing');
+        
+        const script = recorder.stop();
+        // The proof witness should be a tuple with 'g' and the flag's proof term.
+        // It might be 'mono_g' depending on NameRegistry specifics, so we check for exact (...).
+        expect(script).toContain('exact (');
     });
 });
