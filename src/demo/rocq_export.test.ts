@@ -27,7 +27,8 @@ describe('rocq export', () => {
         expect(code).toContain('Ltac2 subst_all () := ltac1:(subst_all1).');
         expect(code).toContain('Ltac2 Notation "destruct_sigma"');
         expect(code).toContain('Tactic Notation "subst_all_in"');
-        expect(code).not.toContain('existT');
+        expect(code).toContain('Notation "( x , .. , y , p )"');
+        expect(code).toContain('existT');
         expect(code).not.toContain('Module MainDrawing');
         expect(code).not.toContain('Record');
     });
