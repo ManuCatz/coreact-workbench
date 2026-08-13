@@ -12,8 +12,7 @@
         positionPicker,
         applyPickedPosition,
         mergeMode,
-        mergeFirstArtefact,
-        mergeSecondArtefact,
+        mergeBaseOpacityFor,
         mergeHoverArtefact,
         inspectedArtefact,
         menuHoverArtefact,
@@ -24,8 +23,6 @@
     let svgContext: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
 
     let mergeOn = false;
-    let mergeFirst: Artefact | null = null;
-    let mergeSecond: Artefact | null = null;
     let mergeHover: Artefact | null = null;
     let inspected: Artefact | null = null;
     let menuHover: Artefact | null = null;
@@ -33,8 +30,6 @@
 
     $: {
         mergeOn = $mergeMode;
-        mergeFirst = $mergeFirstArtefact;
-        mergeSecond = $mergeSecondArtefact;
         mergeHover = $mergeHoverArtefact;
         inspected = $inspectedArtefact;
         menuHover = $menuHoverArtefact;
@@ -48,19 +43,6 @@
         }
     }
 
-    function mergeBaseOpacity(art: Artefact): number {
-        if (art === mergeFirst || art === mergeSecond) {
-            return 1.0;
-        }
-        if (mergeFirst && drawing.areDependenciesEqual(mergeFirst, art)) {
-            return drawing.areProvablyEqual(mergeFirst, art) ? 1.0 : 0.85;
-        }
-        if (!mergeFirst) {
-            return 0.85;
-        }
-        return 0.35;
-    }
-
     function canvasOpacity(art: Artefact): number | null {
         if (mergeOn) {
             const hoveredSet = mergeHover ? mergeHover.getSelfAndDependencies() : null;
@@ -70,7 +52,7 @@
             if (hoveredSet) {
                 return 0.5;
             }
-            return mergeBaseOpacity(art);
+            return mergeBaseOpacityFor(art);
         }
         if (ruleHover) {
             return ruleHover.has(art) ? 1 : 0.5;

@@ -6,6 +6,7 @@
     import DrawingsStorePanel from './DrawingsStorePanel.svelte';
     import Inspector from './Inspector.svelte';
     import RuleApplications from './RuleApplications.svelte';
+    import Toasts from './Toasts.svelte';
     import { loadSortScript, clearAll, mergeMode, startMergeMode, cancelMergeMode, inspectedArtefact } from './store';
 
     let scriptUpload: HTMLInputElement;
@@ -84,4 +85,6 @@
             <RuleApplications />
         </div>
     </div>
+
+    <Toasts />
 </div>

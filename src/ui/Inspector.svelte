@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Artefact } from '../index';
+    import DataAttributeFields from './DataAttributeFields.svelte';
     import { drawing, sortStore } from './store';
     import {
         mergeMode,
@@ -8,7 +9,8 @@
         mergePickingFor,
         draftArtefact,
         dependencyPickingFor,
-        inspectedArtefact
+        inspectedArtefact,
+        version
     } from './store';
     import {
         cancelMergeMode,
@@ -29,7 +31,8 @@
         togglePositionPicker,
         isPositionPickerActive,
         flagLayerCandidates,
-        equalityChildren
+        equalityChildren,
+        pushToast
     } from './store';
 
     // --- Merge view helpers ---
@@ -39,6 +42,7 @@
     let mergePreviewLabel = '';
 
     $: {
+        $version;
         const first = $mergeFirstArtefact;
         if (first) {
             const candidates = drawing.getArtefacts().filter(art =>
@@ -105,21 +109,17 @@
         dependencyPickingFor.set($dependencyPickingFor === depKey ? null : depKey);
     }
 
-    function updateDraftPosition(attrName: string, newVal: number, axis: 0 | 1): void {
-        const draft = $draftArtefact;
-        if (!draft) return;
-        const current = Array.isArray(draft.data[attrName]) ? draft.data[attrName] as number[] : [0, 0];
-        const next = axis === 0 ? [newVal, current[1]] : [current[0], newVal];
+    function updatePosition(
+        model: { data: Record<string, any> },
+        attrName: string,
+        newVal: number,
+        axis: 0 | 1,
+        apply: (value: [number, number]) => void
+    ): void {
+        const current = Array.isArray(model.data[attrName]) ? model.data[attrName] as number[] : [0, 0];
+        const next: [number, number] = axis === 0 ? [newVal, current[1]] : [current[0], newVal];
         if (!Number.isNaN(next[0]) && !Number.isNaN(next[1])) {
-            setDraftDataField(attrName, next);
-        }
-    }
-
-    function updateInspectPosition(art: Artefact, attrName: string, newVal: number, axis: 0 | 1): void {
-        const current = Array.isArray(art.data[attrName]) ? art.data[attrName] as number[] : [0, 0];
-        const next = axis === 0 ? [newVal, current[1]] : [current[0], newVal];
-        if (!Number.isNaN(next[0]) && !Number.isNaN(next[1])) {
-            setArtefactDataField(art, attrName, next);
+            apply(next);
         }
     }
 </script>
@@ -285,65 +285,19 @@
                 />
             </div>
 
-            {#each Object.entries(draftSortDef.attributes) as [attrName, expectedType]}
-                {#if expectedType === 'string' || expectedType === 'number'}
-                    <div class="form-group">
-                        <label for="draft-attr-{attrName}">{attrName} ({expectedType})</label>
-                        <input
-                            id="draft-attr-{attrName}"
-                            type={expectedType === 'number' ? 'number' : 'text'}
-                            step={expectedType === 'number' ? 'any' : undefined}
-                            value={draft.data[attrName] !== undefined ? draft.data[attrName] : ''}
-                            onchange={(e) => {
-                                const target = e.currentTarget as HTMLInputElement;
-                                if (expectedType === 'number') {
-                                    const parsed = parseFloat(target.value);
-                                    if (!Number.isNaN(parsed)) setDraftDataField(attrName, parsed);
-                                } else {
-                                    setDraftDataField(attrName, target.value);
-                                }
-                            }}
-                        />
-                    </div>
-                {:else if expectedType === 'boolean'}
-                    <div class="form-group checkbox">
-                        <input
-                            id="draft-bool-{attrName}"
-                            type="checkbox"
-                            checked={!!draft.data[attrName]}
-                            onchange={(e) => setDraftDataField(attrName, (e.currentTarget as HTMLInputElement).checked)}
-                        />
-                        <label for="draft-bool-{attrName}">{attrName}</label>
-                    </div>
-                {:else if expectedType === 'position'}
-                    <div class="form-group">
-                        <label for="draft-pos-{attrName}-x">{attrName} (x, y)</label>
-                        <div class="position">
-                            <input
-                                id="draft-pos-{attrName}-x"
-                                type="number"
-                                step="any"
-                                value={draft.data[attrName] ? draft.data[attrName][0] : 0}
-                                onchange={(e) => updateDraftPosition(attrName, parseFloat((e.currentTarget as HTMLInputElement).value), 0)}
-                            />
-                            <input
-                                id="draft-pos-{attrName}-y"
-                                type="number"
-                                step="any"
-                                value={draft.data[attrName] ? draft.data[attrName][1] : 0}
-                                onchange={(e) => updateDraftPosition(attrName, parseFloat((e.currentTarget as HTMLInputElement).value), 1)}
-                            />
-                            <button
-                                type="button"
-                                class="pick-btn"
-                                style={isPositionPickerActive(draftProxy, attrName) ? 'background-color: #aed6f1;' : ''}
-                                title="Click canvas to pick position"
-                                onclick={() => togglePositionPicker(draftProxy, attrName)}
-                            >📍</button>
-                        </div>
-                    </div>
-                {/if}
-            {/each}
+            <DataAttributeFields
+                prefix="draft"
+                model={draft}
+                attributes={draftSortDef.attributes}
+                onValueChange={(attrName, value) => setDraftDataField(attrName, value)}
+                onSetPosition={(attrName, axis, newVal) => {
+                    const currentDraft = $draftArtefact;
+                    if (!currentDraft) return;
+                    updatePosition(currentDraft, attrName, newVal, axis, (v) => setDraftDataField(attrName, v));
+                }}
+                isPickerActive={(attrName) => isPositionPickerActive(draftProxy, attrName)}
+                onPickPosition={(attrName) => togglePositionPicker(draftProxy, attrName)}
+            />
 
             {#if flagDeps.length > 0}
                 <h4 style="margin: 15px 0 5px 0; font-size: 0.95rem; color: #444;">Flags</h4>
@@ -418,7 +372,7 @@
                         try {
                             setArtefactLayer(art, newLayerId);
                         } catch (err) {
-                            alert((err as Error).message);
+                            pushToast('error', (err as Error).message);
                         }
                     }}
                 >
@@ -441,65 +395,16 @@
                 />
             </div>
 
-            {#each Object.entries(artSortDef.attributes) as [attrName, expectedType]}
-                {#if expectedType === 'string' || expectedType === 'number'}
-                    <div class="form-group">
-                        <label for="inspect-attr-{attrName}">{attrName} ({expectedType})</label>
-                        <input
-                            id="inspect-attr-{attrName}"
-                            type={expectedType === 'number' ? 'number' : 'text'}
-                            step={expectedType === 'number' ? 'any' : undefined}
-                            value={art.data[attrName] !== undefined ? art.data[attrName] : ''}
-                            onchange={(e) => {
-                                const target = e.currentTarget as HTMLInputElement;
-                                if (expectedType === 'number') {
-                                    const parsed = parseFloat(target.value);
-                                    if (!Number.isNaN(parsed)) setArtefactDataField(art, attrName, parsed);
-                                } else {
-                                    setArtefactDataField(art, attrName, target.value);
-                                }
-                            }}
-                        />
-                    </div>
-                {:else if expectedType === 'boolean'}
-                    <div class="form-group checkbox">
-                        <input
-                            id="inspect-bool-{attrName}"
-                            type="checkbox"
-                            checked={!!art.data[attrName]}
-                            onchange={(e) => setArtefactDataField(art, attrName, (e.currentTarget as HTMLInputElement).checked)}
-                        />
-                        <label for="inspect-bool-{attrName}">{attrName}</label>
-                    </div>
-                {:else if expectedType === 'position'}
-                    <div class="form-group">
-                        <label for="inspect-pos-{attrName}-x">{attrName} (x, y)</label>
-                        <div class="position">
-                            <input
-                                id="inspect-pos-{attrName}-x"
-                                type="number"
-                                step="any"
-                                value={art.data[attrName] ? art.data[attrName][0] : 0}
-                                onchange={(e) => updateInspectPosition(art, attrName, parseFloat((e.currentTarget as HTMLInputElement).value), 0)}
-                            />
-                            <input
-                                id="inspect-pos-{attrName}-y"
-                                type="number"
-                                step="any"
-                                value={art.data[attrName] ? art.data[attrName][1] : 0}
-                                onchange={(e) => updateInspectPosition(art, attrName, parseFloat((e.currentTarget as HTMLInputElement).value), 1)}
-                            />
-                            <button
-                                type="button"
-                                class="pick-btn"
-                                style={isPositionPickerActive(art, attrName) ? 'background-color: #aed6f1;' : ''}
-                                title="Click canvas to pick position"
-                                onclick={() => togglePositionPicker(art, attrName)}
-                            >📍</button>
-                        </div>
-                    </div>
-                {/if}
-            {/each}
+            <DataAttributeFields
+                prefix="inspect"
+                model={art}
+                attributes={artSortDef.attributes}
+                onValueChange={(attrName, value) => setArtefactDataField(art, attrName, value)}
+                onSetPosition={(attrName, axis, newVal) =>
+                    updatePosition(art, attrName, newVal, axis, (v) => setArtefactDataField(art, attrName, v))}
+                isPickerActive={(attrName) => isPositionPickerActive(art, attrName)}
+                onPickPosition={(attrName) => togglePositionPicker(art, attrName)}
+            />
 
             {#if artFlagDeps.length > 0}
                 <h4 style="margin-top: 15px; margin-bottom: 10px; font-size: 0.95rem; color: #444;">Flags</h4>

@@ -7,7 +7,8 @@
         mergeSecondArtefact,
         mergeHoverArtefact,
         inspectedArtefact,
-        menuHoverArtefact
+        menuHoverArtefact,
+        version
     } from './store';
     import {
         getArtefactLabel,
@@ -43,28 +44,29 @@
     let depEntries: [string, Artefact][] = [];
     let flagEntries: [string, boolean][] = [];
 
-    $: children = equalityChildren(artefact);
-    $: baseLabel = getArtefactLabel(artefact);
-    $: equalitySuffix = artefact.sortName === 'Equality' && children.length > 0 ? ` [${children[0].sortName}]` : '';
-    $: flags = activeFlagsLabel(artefact);
-    $: flagSuffix = flags.length > 0 ? ` (${flags.join(', ')})` : '';
-    $: prefix = dependencyKey ? `${dependencyKey}: ` : '';
-    $: layerObj = drawing.getLayer(artefact.layerId);
-    $: isLayerVis = layerObj ? drawing.isLayerVisible(layerObj.id) : true;
-    $: layerBadgeText = layerObj ? layerObj.name + (isLayerVis ? '' : ' (hidden)') : artefact.layerId;
-    $: provablyEqualCandidate = isProvablyEqualCandidate(artefact);
-    $: inspectedNode =
+    $: $version, children = equalityChildren(artefact);
+    $: $version, baseLabel = getArtefactLabel(artefact);
+    $: $version, equalitySuffix = artefact.sortName === 'Equality' && children.length > 0 ? ` [${children[0].sortName}]` : '';
+    $: $version, flags = activeFlagsLabel(artefact);
+    $: $version, flagSuffix = flags.length > 0 ? ` (${flags.join(', ')})` : '';
+    $: $version, prefix = dependencyKey ? `${dependencyKey}: ` : '';
+    $: $version, layerObj = drawing.getLayer(artefact.layerId);
+    $: $version, isLayerVis = layerObj ? drawing.isLayerVisible(layerObj.id) : true;
+    $: $version, layerBadgeText = layerObj ? layerObj.name + (isLayerVis ? '' : ' (hidden)') : artefact.layerId;
+    $: $version, provablyEqualCandidate = isProvablyEqualCandidate(artefact);
+    $: $version, inspectedNode =
         $inspectedArtefact === artefact
         || ($mergeMode && ($mergeFirstArtefact === artefact || $mergeSecondArtefact === artefact));
 
-    $: depEntries = (Object.entries(artefact.dependencies) as [string, Artefact | boolean][]).filter(
+    $: $version, depEntries = (Object.entries(artefact.dependencies) as [string, Artefact | boolean][]).filter(
         (entry): entry is [string, Artefact] => typeof entry[1] !== 'boolean'
     );
-    $: flagEntries = (Object.entries(artefact.dependencies) as [string, Artefact | boolean][]).filter(
+    $: $version, flagEntries = (Object.entries(artefact.dependencies) as [string, Artefact | boolean][]).filter(
         (entry): entry is [string, boolean] => entry[1] === true
     );
 
     $: {
+        $version;
         if ($mergeMode) {
             const hoveredSet = $mergeHoverArtefact ? $mergeHoverArtefact.getSelfAndDependencies() : null;
             if (hoveredSet && hoveredSet.has(artefact)) {

@@ -338,9 +338,7 @@ export class Drawing {
 
         for (const art of layerArtefacts) {
             if (art.sortName === "Equality") {
-                const children = art instanceof EqualityArtefact
-                    ? art.children
-                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                const children = artefactChildren(art);
 
                 if (children.length < 2) {
                     return {
@@ -357,20 +355,8 @@ export class Drawing {
 
         // Order pattern artefacts so that dependencies within the pattern come first.
         const patternSet = new Set<Artefact>(pattern);
-        const ordered: Artefact[] = [];
-        const orderedSet = new Set<Artefact>();
-        while (ordered.length < pattern.length) {
-            const next = pattern.find(a =>
-                !orderedSet.has(a) &&
-                Object.values(a.dependencies).every(dep =>
-                    typeof dep === "boolean" || !patternSet.has(dep) || orderedSet.has(dep)
-                )
-            );
-            if (!next) break;
-            ordered.push(next);
-            orderedSet.add(next);
-        }
-        if (orderedSet.size < pattern.length) {
+        const ordered = topologicallyOrderPattern(pattern);
+        if (!ordered) {
             return {
                 provable: false,
                 reason: `Layer '${layer.name}' contains artefacts with circular dependencies; it cannot be matched in parent layer '${parentName}'.`
@@ -635,9 +621,7 @@ export class Drawing {
         }
 
         if (artefact.sortName === "Equality") {
-            const children = artefact instanceof EqualityArtefact
-                ? artefact.children
-                : Object.values(artefact.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            const children = artefactChildren(artefact);
             
             // Validate equality dependencies for the target layer
             this.validateEqualityDependencies(children, targetLayerId);
@@ -651,18 +635,14 @@ export class Drawing {
 
             const childrenSet = new Set(children);
             const overlapping = sameLayerEqualities.filter(art => {
-                const cList = art instanceof EqualityArtefact
-                    ? art.children
-                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                const cList = artefactChildren(art);
                 return cList.some(c => childrenSet.has(c));
             });
 
             if (overlapping.length > 0) {
                 const combinedSet = new Set<Artefact>(children);
                 for (const ov of overlapping) {
-                    const cList = ov instanceof EqualityArtefact
-                        ? ov.children
-                        : Object.values(ov.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                    const cList = artefactChildren(ov);
                     cList.forEach(c => combinedSet.add(c));
                 }
                 const combined = Array.from(combinedSet);
@@ -709,12 +689,7 @@ export class Drawing {
         const adj = new Map<Artefact, Set<Artefact>>();
         for (const art of this.artefacts) {
             if (art.sortName === "Equality" && allowedAncestors.has(art.layerId)) {
-                let children: Artefact[] = [];
-                if (art instanceof EqualityArtefact) {
-                    children = art.children;
-                } else {
-                    children = Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
-                }
+                const children = artefactChildren(art);
                 for (let i = 0; i < children.length; i++) {
                     for (let j = i + 1; j < children.length; j++) {
                         const c1 = children[i];
@@ -834,9 +809,7 @@ export class Drawing {
 
         const overlapping: Artefact[] = [];
         for (const eq of sameLayerEqualities) {
-            const children = eq instanceof EqualityArtefact 
-                ? eq.children 
-                : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+            const children = artefactChildren(eq);
             if (children.some(c => inputSet.has(c))) {
                 overlapping.push(eq);
             }
@@ -845,9 +818,7 @@ export class Drawing {
         if (overlapping.length > 0) {
             const combinedChildrenSet = new Set<Artefact>(inputSet);
             for (const eq of overlapping) {
-                const children = eq instanceof EqualityArtefact 
-                    ? eq.children 
-                    : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                const children = artefactChildren(eq);
                 children.forEach(c => combinedChildrenSet.add(c));
             }
 
@@ -1077,9 +1048,7 @@ export class Drawing {
         // Remove any equality artefacts whose children count fell below 2
         this.artefacts = this.artefacts.filter(art => {
             if (art.sortName === "Equality") {
-                const children = art instanceof EqualityArtefact
-                    ? art.children
-                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                const children = artefactChildren(art);
                 return children.length >= 2;
             }
             return true;
@@ -1089,9 +1058,7 @@ export class Drawing {
     removeEqualityChild(eq: Artefact, childToRemove: Artefact): void {
         if (eq.sortName !== "Equality") return;
 
-        const currentChildren = eq instanceof EqualityArtefact
-            ? eq.children
-            : Object.values(eq.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+        const currentChildren = artefactChildren(eq);
 
         const remaining = currentChildren.filter(c => c !== childToRemove);
         if (remaining.length < 2) {
@@ -1221,9 +1188,7 @@ export class Drawing {
             }
 
             if (art.sortName === "Equality") {
-                const currentChildren = art instanceof EqualityArtefact
-                    ? art.children
-                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                const currentChildren = artefactChildren(art);
 
                 const updatedChildren = currentChildren.map(c => c === a1 ? a2 : c);
                 const uniqueChildren = Array.from(new Set(updatedChildren));
@@ -1243,9 +1208,7 @@ export class Drawing {
         // Clean up any equality artefacts that now have fewer than 2 distinct children
         this.artefacts = this.artefacts.filter(art => {
             if (art.sortName === "Equality") {
-                const children = art instanceof EqualityArtefact
-                    ? art.children
-                    : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+                const children = artefactChildren(art);
                 return children.length >= 2;
             }
             return true;
@@ -1685,9 +1648,7 @@ function extractEqualityConstraints(rule: Drawing): Array<{ children: Artefact[]
     return rule.getArtefacts()
         .filter(a => a.sortName === "Equality" && rootLayerIds.includes(a.layerId))
         .map(a => ({
-            children: a instanceof EqualityArtefact
-                ? a.children
-                : Object.values(a.dependencies).filter((v): v is Artefact => typeof v !== "boolean")
+            children: artefactChildren(a)
         }))
         .filter(c => c.children.length >= 2);
 }
@@ -1716,18 +1677,9 @@ function findRuleApplicationsInternal(
         .map(l => l.id));
     const hostCandidates = host.getArtefacts().filter(a => rootLayerIds.includes(a.layerId));
 
-    const ordered: Artefact[] = [];
-    const orderedSet = new Set<Artefact>();
-    while (ordered.length < patternArts.length) {
-        const next = patternArts.find(a =>
-            !orderedSet.has(a) &&
-            Object.values(a.dependencies).every(dep =>
-                typeof dep === "boolean" || !patternSet.has(dep) || orderedSet.has(dep)
-            )
-        );
-        if (!next) break;
-        ordered.push(next);
-        orderedSet.add(next);
+    const ordered = topologicallyOrderPattern(patternArts);
+    if (!ordered) {
+        return [];
     }
 
     const assignment = new Map<Artefact, Artefact>();
@@ -1936,6 +1888,24 @@ function artefactChildren(art: Artefact): Artefact[] {
     return art instanceof EqualityArtefact
         ? art.children
         : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+}
+
+function topologicallyOrderPattern(pattern: Artefact[]): Artefact[] | null {
+    const patternSet = new Set<Artefact>(pattern);
+    const ordered: Artefact[] = [];
+    const orderedSet = new Set<Artefact>();
+    while (ordered.length < pattern.length) {
+        const next = pattern.find(a =>
+            !orderedSet.has(a) &&
+            Object.values(a.dependencies).every(dep =>
+                typeof dep === "boolean" || !patternSet.has(dep) || orderedSet.has(dep)
+            )
+        );
+        if (!next) break;
+        ordered.push(next);
+        orderedSet.add(next);
+    }
+    return orderedSet.size === pattern.length ? ordered : null;
 }
 
 function remapFlagLayers(source: Artefact, target: Artefact, targetDrawing: Drawing, layerMap: Record<string, string>): void {

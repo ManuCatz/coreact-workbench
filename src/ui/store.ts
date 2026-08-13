@@ -78,6 +78,32 @@ export const layerProvability = writable<Map<string, { provable: boolean; reason
 export const exportSelection = writable<Set<string>>(new Set());
 
 // ---------------------------------------------------------------------------
+// Toasts (non-blocking replacement for alert()/window.alert)
+// ---------------------------------------------------------------------------
+
+export type ToastKind = 'info' | 'error';
+
+export interface Toast {
+    id: number;
+    kind: ToastKind;
+    message: string;
+}
+
+export const toasts = writable<Toast[]>([]);
+
+let nextToastId = 1;
+
+export function dismissToast(id: number): void {
+    toasts.update(list => list.filter(t => t.id !== id));
+}
+
+export function pushToast(kind: ToastKind, message: string): void {
+    const id = nextToastId++;
+    toasts.update(list => [...list, { id, kind, message }]);
+    setTimeout(() => dismissToast(id), kind === 'error' ? 8000 : 4000);
+}
+
+// ---------------------------------------------------------------------------
 // Derived collections (recomputed whenever `version` bumps)
 // ---------------------------------------------------------------------------
 
@@ -118,7 +144,6 @@ export function applyPickedPosition(x: number, y: number): void {
     picker.artefact.data[picker.attrName] = [x, y];
     stopPositionPicker();
     refresh();
-    draftArtefact.update(d => d);
 }
 
 export function getSinglePositionAttr(sortDef: SortDefinition): string | null {
@@ -287,7 +312,7 @@ export function createDraftArtefact(): boolean {
         refresh();
         return true;
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
         return false;
     }
 }
@@ -296,8 +321,7 @@ export function isDraftComplete(draft: DraftArtefact): boolean {
     const sortDef = sortStore.getSort(draft.sortName);
     if (!sortDef) return false;
     if (draft.sortName === 'Equality') {
-        const children = Object.values(draft.dependencies).filter((v): v is Artefact => typeof v !== 'boolean');
-        return children.length >= 2;
+        return equalityChildren(draft).length >= 2;
     }
     for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
         if (expectedSort !== 'flag' && !draft.dependencies[depKey]) {
@@ -356,9 +380,9 @@ export function selectMergeArtefact(artefact: Artefact): void {
         mergePickingFor.set('second');
     } else if (pickingFor === 'second' || first) {
         if (artefact === first) {
-            alert('Cannot merge an artefact with itself.');
+            pushToast('error', 'Cannot merge an artefact with itself.');
         } else if (!drawing.areDependenciesEqual(first, artefact)) {
-            alert(`Cannot merge: Artefact '${artefact.data.label || artefact.sortName}' does not have matching dependencies.`);
+            pushToast('error', `Cannot merge: Artefact '${artefact.data.label || artefact.sortName}' does not have matching dependencies.`);
         } else {
             mergeSecondArtefact.set(artefact);
             mergePickingFor.set(null);
@@ -381,7 +405,7 @@ export function performMerge(): void {
         inspectedArtefact.set(mergedResult);
         refresh();
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
     }
 }
 
@@ -418,10 +442,7 @@ export function flagLayerCandidates(artefactLayerId: string): string[] {
 export function getArtefactLabel(art: Artefact): string {
     if (art.data.label) return art.data.label;
     if (art.sortName === 'Equality') {
-        const children = art instanceof Artefact
-            ? Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== 'boolean')
-            : [];
-        return children.map(c => c.data.label || c.sortName).join(' = ');
+        return equalityChildren(art).map(c => c.data.label || c.sortName).join(' = ');
     }
     return '(unnamed)';
 }
@@ -470,7 +491,7 @@ export function loadDrawingByName(name: string): boolean {
         refresh();
         return true;
     } catch (err) {
-        alert(`Error loading drawing:\n${(err as Error).message}`);
+        pushToast('error', `Error loading drawing:\n${(err as Error).message}`);
         return false;
     }
 }
@@ -493,7 +514,7 @@ export function downloadDrawingsJson(names: string[]): void {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     } catch (err) {
-        alert(`Error exporting drawings:\n${(err as Error).message}`);
+        pushToast('error', `Error exporting drawings:\n${(err as Error).message}`);
     }
 }
 
@@ -503,7 +524,7 @@ export function copyRocqExport(names: string[]): void {
             .map(name => drawingStore.getDrawing(name))
             .filter((d): d is SavedDrawing => !!d);
         if (drawings.length === 0) {
-            alert('Error exporting drawings:\nNo drawings found in the store.');
+            pushToast('error', 'Error exporting drawings:\nNo drawings found in the store.');
             return;
         }
         const code = exportDrawingsToRocq(drawings, sortStore);
@@ -511,13 +532,13 @@ export function copyRocqExport(names: string[]): void {
         navigator.clipboard
             .writeText(code)
             .then(() => {
-                alert(`Exported ${ruleCount} rule${ruleCount === 1 ? '' : 's'} to Rocq.`);
+                pushToast('info', `Exported ${ruleCount} rule${ruleCount === 1 ? '' : 's'} to Rocq.`);
             })
             .catch(() => {
-                alert('Error exporting drawings:\nClipboard access failed.');
+                pushToast('error', 'Error exporting drawings:\nClipboard access failed.');
             });
     } catch (err) {
-        alert(`Error exporting drawings:\n${(err as Error).message}`);
+        pushToast('error', `Error exporting drawings:\n${(err as Error).message}`);
     }
 }
 
@@ -542,7 +563,6 @@ export function setArtefactDataField(art: Artefact, name: string, value: any): v
     } else {
         art.data[name] = value;
     }
-    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -575,13 +595,11 @@ export function setInspectedLabel(art: Artefact, rawLabel: string): void {
             }
         }
     }
-    inspectedArtefact.update(a => a);
     refresh();
 }
 
 export function setArtefactLayer(art: Artefact, targetLayerId: string): void {
     drawing.setArtefactLayer(art, targetLayerId);
-    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -592,7 +610,6 @@ export function setArtefactFlag(art: Artefact, flagKey: string, checked: boolean
         delete art.dependencies[flagKey];
         delete art.flagLayers[flagKey];
     }
-    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -609,7 +626,6 @@ export function toggleArtefactFlagLayer(art: Artefact, flagKey: string, layerId:
         delete art.flagLayers[flagKey];
         delete art.dependencies[flagKey];
     }
-    inspectedArtefact.update(a => a);
     refresh();
 }
 
@@ -621,9 +637,9 @@ export function pickDraftDependency(artefact: Artefact): void {
     if (draft.sortName === 'Equality') {
         draftArtefact.update(d => {
             if (!d) return d;
-            const existingItems = Object.values(d.dependencies).filter((v): v is Artefact => typeof v !== 'boolean');
+            const existingItems = equalityChildren(d);
             if (existingItems.length > 0 && existingItems[0].sortName !== artefact.sortName) {
-                alert(`Equality artefact requires all elements to be of sort '${existingItems[0].sortName}', but selected '${artefact.sortName}'.`);
+                pushToast('error', `Equality artefact requires all elements to be of sort '${existingItems[0].sortName}', but selected '${artefact.sortName}'.`);
                 return d;
             }
             const nextIdx = Object.keys(d.dependencies).length;
@@ -644,7 +660,7 @@ export function pickDraftDependency(artefact: Artefact): void {
         dependencyPickingFor.set(findNextUnfilledDependency(get(draftArtefact) as DraftArtefact));
         refresh();
     } else {
-        alert(`Expected sort '${expectedSort}', but selected '${artefact.sortName}'.`);
+        pushToast('error', `Expected sort '${expectedSort}', but selected '${artefact.sortName}'.`);
     }
 }
 
@@ -683,7 +699,7 @@ export function setCurrentDrawingRule(checked: boolean): void {
         drawing.setIsRule(checked);
         refresh();
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
     }
 }
 
@@ -699,7 +715,7 @@ export function saveActiveDrawing(): void {
         activeDrawingName.set(name);
         refresh();
     } catch (err) {
-        alert(`Error saving drawing:\n${(err as Error).message}`);
+        pushToast('error', `Error saving drawing:\n${(err as Error).message}`);
     }
 }
 
@@ -712,7 +728,7 @@ export function newDrawing(): void {
     if (!input || !input.trim()) return;
     const name = input.trim();
     if (drawingStore.getDrawing(name)) {
-        alert(`A drawing named '${name}' already exists.`);
+        pushToast('error', `A drawing named '${name}' already exists.`);
         return;
     }
     drawing.clear();
@@ -722,7 +738,7 @@ export function newDrawing(): void {
         activeDrawingName.set(name);
         refresh();
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
     }
 }
 
@@ -734,16 +750,16 @@ export async function importDrawingsFile(file: File): Promise<void> {
         if (renames.length > 0) {
             summary += `\nRenamed on collision: ${renames.map(r => `'${r.requested}' -> '${r.actual}'`).join(', ')}.`;
         }
-        alert(summary);
+        pushToast('info', summary);
         refresh();
     } catch (err) {
-        alert(`Error importing drawing:\n${(err as Error).message}`);
+        pushToast('error', `Error importing drawing:\n${(err as Error).message}`);
     }
 }
 
 export function deleteSelectedDrawings(names: string[]): void {
     if (names.length === 0) {
-        alert('Select at least one drawing to delete.');
+        pushToast('error', 'Select at least one drawing to delete.');
         return;
     }
     if (!confirm(`Are you sure you want to delete ${names.length} drawing(s): ${names.map(n => `'${n}'`).join(', ')}?`)) {
@@ -783,7 +799,7 @@ export function renameDrawingName(oldName: string, newName: string): void {
         });
         refresh();
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
     }
 }
 
@@ -795,7 +811,7 @@ export function markDrawingAsRule(name: string, isRule: boolean): void {
         drawingStore.markAsRule(name, isRule);
         refresh();
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
     }
 }
 
@@ -807,10 +823,10 @@ export function toggleRocqRecording(): void {
             navigator.clipboard
                 .writeText(script)
                 .then(() => {
-                    alert('Rocq recording script copied to clipboard.');
+                    pushToast('info', 'Rocq recording script copied to clipboard.');
                 })
                 .catch(() => {
-                    alert('Error copying recording:\nClipboard access failed.');
+                    pushToast('error', 'Error copying recording:\nClipboard access failed.');
                 });
         } else {
             const name = get(activeDrawingName) ?? 'Unsaved Drawing';
@@ -819,7 +835,7 @@ export function toggleRocqRecording(): void {
         }
         refresh();
     } catch (err) {
-        alert(`Rocq Recording Error:\n${(err as Error).message}`);
+        pushToast('error', `Rocq Recording Error:\n${(err as Error).message}`);
     }
 }
 
@@ -859,7 +875,7 @@ export async function loadSortScript(file: File): Promise<void> {
         executor(sortStore, d3);
         refresh();
     } catch (err) {
-        alert(`Error executing sort script:\n${(err as Error).message}`);
+        pushToast('error', `Error executing sort script:\n${(err as Error).message}`);
         console.error('Script Execution Error:', err);
     }
 }
@@ -944,7 +960,7 @@ export function checkLayerProvable(layerId: string): void {
         }
         refresh();
     } catch (err) {
-        alert((err as Error).message);
+        pushToast('error', (err as Error).message);
     }
 }
 
@@ -1010,13 +1026,13 @@ export function applyRuleAt(savedRuleName: string, appIndex: number): void {
                 createdNames.push(name);
                 console.log(`Saved derived drawing '${name}': isRule=${derived.drawing.isRule}, artefacts=${derived.drawing.getArtefacts().length}.`);
             }
-            alert(`Applied rule '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s) and created ${createdNames.length} derived drawing(s):\n- ${createdNames.join('\n- ')}`);
+            pushToast('info', `Applied rule '${savedRule.name}': added ${result.hostArtefacts.length} artefact(s) and created ${createdNames.length} derived drawing(s):\n- ${createdNames.join('\n- ')}`);
         }
         if (applicationResult) {
             rocqRecorder.recordRuleApply(ruleDrawing, savedRule.name, app, drawing, applicationResult, activeName, sortStore);
         }
         refresh();
     } catch (err) {
-        alert(`Error applying rule '${savedRule.name}':\n${(err as Error).message}`);
+        pushToast('error', `Error applying rule '${savedRule.name}':\n${(err as Error).message}`);
     }
 }

@@ -22,7 +22,8 @@
         toggleRocqRecording,
         toggleExportSelection,
         setExportSelectionAll,
-        getSelectedDrawingNames
+        getSelectedDrawingNames,
+        pushToast
     } from './store';
 
     let importInput: HTMLInputElement;
@@ -39,7 +40,7 @@
     function onExportJson(): void {
         const names = getSelectedDrawingNames();
         if (names.length === 0) {
-            alert('Select at least one drawing to export.');
+            pushToast('info', 'Select at least one drawing to export.');
             return;
         }
         downloadDrawingsJson(names);
@@ -48,7 +49,7 @@
     function onRocqExport(): void {
         const names = getSelectedDrawingNames();
         if (names.length === 0) {
-            alert('Select at least one drawing to export.');
+            pushToast('info', 'Select at least one drawing to export.');
             return;
         }
         copyRocqExport(names);

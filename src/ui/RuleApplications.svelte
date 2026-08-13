@@ -1,8 +1,7 @@
 <script lang="ts">
     import type { Artefact } from '../index';
     import { get } from 'svelte/store';
-    import { computeRuleApplications, applyRuleAt, mergeMode, version } from './store';
-    import { drawing } from './store';
+    import { computeRuleApplications, applyRuleAt, mergeMode, ruleHoverArtefacts, version } from './store';
 
     let entries: ReturnType<typeof computeRuleApplications> = [];
     $: $version, entries = computeRuleApplications();
@@ -39,20 +38,11 @@
 
     function onHover(activeSet: Set<Artefact>): void {
         if (get(mergeMode)) return;
-        for (const art of drawing.getArtefacts()) {
-            const opacity = activeSet.has(art) ? 1 : 0.5;
-            if (art.svgElement) {
-                art.svgElement.attr('opacity', opacity);
-            }
-        }
+        ruleHoverArtefacts.set(activeSet);
     }
 
     function onLeave(): void {
-        for (const art of drawing.getArtefacts()) {
-            if (art.svgElement) {
-                art.svgElement.attr('opacity', 1);
-            }
-        }
+        ruleHoverArtefacts.set(null);
     }
 </script>
 
