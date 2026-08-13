@@ -58,24 +58,32 @@
 ```
 .
 ├── src/
-│   ├── index.ts           # Core library classes: Layer, SortStore, Artefact, Drawing
-│   ├── demo.ts            # Demo diagram + consistency tests (runs on startup)
-│   ├── main.ts            # Bootstrap: runs demo, loads active drawing, mounts App.svelte
+│   ├── index.ts           # Core library classes: Layer, SortStore, Artefact, EqualityArtefact, Drawing, DrawingStore
+│   ├── types.ts           # Shared types (D3Context: Selection<SVGGElement, …>)
+│   ├── default_sorts.ts   # Definition of default sorts (Vertex, Edge, Pullback, Triangle, Equality)
+│   ├── rocq_export.ts     # Export drawings to Coq/rocq
+│   ├── rocq_recording.ts  # RocqRecorder: records export-affecting edits (labels, deps, layer)
+│   ├── demo.ts            # Bootstrap: runs buildDemo, loads active drawing, mounts App.svelte
+│   ├── demo/
+│   │   ├── buildDemo.ts   # Builds the demo diagram + 9 saved rule drawings (incl. 'Rule Drawing Demo')
+│   │   ├── helpers.ts     # Shared demo/test helpers (newDemoContext, registerDefaultSorts)
+│   │   └── *.test.ts      # Vitest suites (rules, consistency, demo, rocq export, rocq compile)
+│   ├── main.ts            # Entry point; mounts App.svelte into #app
 │   ├── ui/
 │   │   ├── store.ts       # All reactive stores + UI actions (single shared module)
-│   │   ├── App.svelte     # App layout: menu, canvas, inspector, rules panel
+│   │   ├── App.svelte     # App layout: menu, canvas, inspector, rules panel, toasts
 │   │   ├── Canvas.svelte  # SVG canvas; imperative D3 redraw on store version bump
-│   │   ├── LayersTree.svelte, LayerNode.svelte    # Layer tree UI
-│   │   ├── ArtefactMenu.svelte, ArtefactNode.svelte # Artefact tree UI
+│   │   ├── LayersTree.svelte, LayerNode.svelte       # Layer tree UI
+│   │   ├── ArtefactMenu.svelte, ArtefactNode.svelte  # Artefact tree UI
 │   │   ├── DrawingsStorePanel.svelte  # Save/load/import/export drawings
 │   │   ├── RuleApplications.svelte    # Applyable rules list + Apply buttons
 │   │   ├── Inspector.svelte           # Merge / draft / inspect views
+│   │   ├── DataAttributeFields.svelte # Shared attribute form controls (draft + inspect)
+│   │   ├── Toasts.svelte              # Non-blocking toast notifications
 │   │   └── app.css         # Global styles
-│   ├── default_sorts.ts   # Definition of default sorts (Vertex, Edge, Pullback)
 │   └── vite-env.d.ts      # Vite + Svelte TypeScript environment definitions
 ├── public/
-│   ├── default_sorts.js   # Pre-compiled JS default sorts script loaded dynamically at runtime
-│   └── index.js           # Public entry script
+│   └── default_sorts.js   # Pre-compiled JS default sorts; imported raw by buildDemo
 ├── index.html             # Minimal mount container (#app) + main.ts entry script
 ├── tsconfig.json          # TypeScript compiler configuration
 ├── svelte.config.js       # Svelte preprocessor config (vitePreprocess)
@@ -98,7 +106,7 @@
    - Panels (layers tree, artefact menu, inspector, drawing store, rules) read from derived stores and dispatch through store actions. They never reach into core classes directly except through `store.ts` helpers.
 
 4. **Startup (`src/main.ts`)**:
-   - Imports `./demo` (runs the demo diagram + consistency tests, saving 'Rule Drawing Demo' to the store), loads that drawing as active, then mounts `App.svelte` into `#app`.
+   - Imports `./demo`, which runs `buildDemo` (constructs the demo diagram and saves 9 rule drawings including 'Rule Drawing Demo'), loads that drawing as active, then mounts `App.svelte` into `#app`.
 
 ### Core Architecture
 
@@ -132,6 +140,7 @@
 2. **Type Safety**:
    - Maintain strict type checking. Do not use implicit `any` when adding new interfaces or functions.
    - Ensure attribute types matches allowed primitives: `"number"`, `"string"`, `"boolean"`, `"position"`.
+   - Data attribute values are typed as `DataAttributeValue` (`string | number | boolean | [number, number]`); use it for setter parameters and draft data instead of raw `any`.
 
 3. **Method Chaining**:
    - `SortStore.newSort()` returns `this` (`SortStore`) to allow fluent chaining.

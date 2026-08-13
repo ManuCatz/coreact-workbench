@@ -93,6 +93,12 @@ export type ArtefactDependency = Artefact | boolean | FlagRef;
  */
 export type ResolvedDependency = Artefact | boolean;
 
+/**
+ * The legal primitive values for a sort's data attributes, matching the
+ * attribute types "number", "string", "boolean" and "position".
+ */
+export type DataAttributeValue = string | number | boolean | [number, number];
+
 export class Artefact {
     public svgElement: D3Context | null = null; // Store the rendered SVG element
     // A flag may be established in several layers at once; the artefact's own

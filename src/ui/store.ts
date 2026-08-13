@@ -11,7 +11,8 @@ import {
     applySecondOrderRule,
     type SortDefinition,
     type SavedDrawing,
-    type RuleApplication
+    type RuleApplication,
+    type DataAttributeValue
 } from '../index';
 import { RocqRecorder } from '../rocq_recording';
 import { exportDrawingsToRocq, drawingExportNames } from '../rocq_export';
@@ -50,7 +51,7 @@ export const inspectedArtefact = writable<Artefact | null>(null);
 export interface DraftArtefact {
     sortName: string;
     dependencies: Record<string, Artefact | boolean>;
-    data: Record<string, any>;
+    data: Record<string, DataAttributeValue>;
     layerId: string;
     flagLayers: Record<string, string[]>;
 }
@@ -183,7 +184,7 @@ export function findNextUnfilledDependency(draft: DraftArtefact): string | null 
     return null;
 }
 
-export function setDraftDataField(name: string, value: any): void {
+export function setDraftDataField(name: string, value: DataAttributeValue): void {
     draftArtefact.update(d => {
         if (!d) return d;
         if (name === 'label' && value === '') {
@@ -253,7 +254,7 @@ export function startDraftForSort(sortDef: SortDefinition): void {
     inspectedArtefact.set(null);
     cancelMergeMode();
 
-    const initialData: Record<string, any> = {};
+    const initialData: Record<string, DataAttributeValue> = {};
     for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
         if (expectedType === 'position') {
             initialData[attrName] = [300, 300];
@@ -557,7 +558,7 @@ export function selectArtefactToInspect(art: Artefact): void {
     refresh();
 }
 
-export function setArtefactDataField(art: Artefact, name: string, value: any): void {
+export function setArtefactDataField(art: Artefact, name: string, value: DataAttributeValue): void {
     if (name === 'label' && value === '') {
         delete art.data.label;
     } else {

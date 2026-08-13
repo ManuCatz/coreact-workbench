@@ -1,9 +1,9 @@
 This is a description of a JS library for drawing SVG shapes, with data. The API is based on d3.js. The library is implemented in TypeScript.
 
-The library provides a class called SortStore. An object of type SortStore has a method newSort with 4 arguments:
+The library provides a class called SortStore. An object of type SortStore has a method newSort with 4 required arguments (and an optional 5th, `initContext`):
 1. The name of the sort, as a string.
 2. a dictionary whose keys are the names of the dependencies, and the values are the corresponding sort names. 
-3. a dictionary, whose fields are names of data attributes used to draw the shape, and the values are the type of the attribute (e.g., "number", "string", "boolean")
+3. a dictionary, whose fields are names of data attributes used to draw the shape, and the values are the type of the attribute (e.g., "number", "string", "boolean", "position")
 4. a function that takes a data object and some drawing context and draws the shape based on the data attributes. The data object has the same fields as specified in the second argument, except that it also has a field for each dependency, whose values is the corresponding data object, as well as field "label", of type string.
 
 The SortStore.newSort returns the same 
@@ -41,10 +41,10 @@ sortStore.newSort("Vertex",
   });
 
 const drawing = new Drawing(sortStore);
-drawing.newArtefact("Vertex", {}, {position: [0, 0], label: "v0"});
-  .newArtefact("Vertex", {}, {position: [2, 0], label: "v1"});
-  .newArtefact("Edge", {source: v0, target: v1}, {width: 1, label: "e0"});
-  .draw(...);
+const v0 = drawing.newArtefact("Vertex", {}, {position: [0, 0], label: "v0"});
+const v1 = drawing.newArtefact("Vertex", {}, {position: [2, 0], label: "v1"});
+drawing.newArtefact("Edge", {source: v0, target: v1}, {width: 1, label: "e0"});
+drawing.draw(...);
 ```
 
 
