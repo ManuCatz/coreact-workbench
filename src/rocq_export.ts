@@ -73,6 +73,8 @@ export const SUBST_ALL_TACTIC = `Ltac subst_all1 :=
 
 export const SUBST_ALL_LTAC2 = `Ltac2 subst_all () := ltac1:(subst_all1).`;
 
+export const INTROS_SIGMA_TACTIC = `Ltac2 intros_sigma () := repeat (intros; subst_all ()).`;
+
 export const SUBST_ALL_IN_TACTIC = `Tactic Notation "subst_all_in"  uconstr(B)  :=
   subst_all1;  exact B.`;
 
@@ -703,6 +705,8 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
     lines.push(SUBST_ALL_TACTIC);
     lines.push("");
     lines.push(SUBST_ALL_LTAC2);
+    lines.push("");
+    lines.push(INTROS_SIGMA_TACTIC);
     lines.push("");
     lines.push(SUBST_ALL_IN_TACTIC);
     lines.push("");

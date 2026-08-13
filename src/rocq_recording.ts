@@ -113,11 +113,7 @@ export class RocqRecorder {
         this.ruleInfo = info;
 
         this.lines.push(`Lemma ${lemmaName} : ${info.type}.`);
-        if (info.rootElements.some(el => el.kind === "equation")) {
-            this.lines.push("repeat (intros; subst_all ()).");
-        } else {
-            this.lines.push("intros.");
-        }
+        this.lines.push("intros_sigma ().");
 
         this.active = true;
     }

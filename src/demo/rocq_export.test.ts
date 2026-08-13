@@ -81,7 +81,6 @@ describe('rocq export', () => {
         const script = recorder.stop();
 
         expect(script).toContain('Lemma MainDrawing_rule :');
-        expect(script).toContain('intros.');
     });
 
     it('applies a rule whose multi-element conclusion combines an artefact and an equality', () => {
