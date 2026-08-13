@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { buildDemo, newDemoContext } from './buildDemo';
 
+describe('default sort registration', () => {
+    it('registers the five default sorts', () => {
+        const { sortStore } = newDemoContext();
+        const names = sortStore.getAllSorts().map(s => s.name);
+        expect(names).toEqual(expect.arrayContaining(['Vertex', 'Edge', 'Pullback', 'Triangle', 'Equality']));
+    });
+});
+
 describe('demo drawing construction', () => {
     it('builds the full demo drawing with expected layers and artefacts', () => {
         const ctx = newDemoContext();

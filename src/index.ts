@@ -1023,18 +1023,18 @@ export class Drawing {
                 layerGroup.attr("display", "none");
             }
 
-        // Draw artefacts belonging to this layer
-        const layerArtefacts = this.artefacts.filter(a => a.layerId === layer.id);
-        const isLayerVisible = (layerId: string) => this.isLayerVisible(layerId);
-        for (const artefact of layerArtefacts) {
-            artefact.draw(layerGroup, isLayerVisible);
-            if (this.focusedLayerId !== null) {
-                const focused = this.isFocused(artefact);
-                if (artefact.svgElement && artefact.svgElement.attr) {
-                    artefact.svgElement.attr("opacity", focused ? 1.0 : 0.5);
+            // Draw artefacts belonging to this layer
+            const layerArtefacts = this.artefacts.filter(a => a.layerId === layer.id);
+            const isLayerVisible = (layerId: string) => this.isLayerVisible(layerId);
+            for (const artefact of layerArtefacts) {
+                artefact.draw(layerGroup, isLayerVisible);
+                if (this.focusedLayerId !== null) {
+                    const focused = this.isFocused(artefact);
+                    if (artefact.svgElement && artefact.svgElement.attr) {
+                        artefact.svgElement.attr("opacity", focused ? 1.0 : 0.5);
+                    }
                 }
             }
-        }
 
             // Apply partial layer color if colorEnabled
             if (layer.colorEnabled && layer.color) {

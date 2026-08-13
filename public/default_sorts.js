@@ -107,13 +107,13 @@
         const dx1 = T1[0] - V[0];
         const dy1 = T1[1] - V[1];
         const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-        const ux1 = dx1 / len1;
-        const uy1 = dy1 / len1;
+        const ux1 = len1 > 0 ? dx1 / len1 : 0;
+        const uy1 = len1 > 0 ? dy1 / len1 : 0;
         const dx2 = T2[0] - V[0];
         const dy2 = T2[1] - V[1];
         const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-        const ux2 = dx2 / len2;
-        const uy2 = dy2 / len2;
+        const ux2 = len2 > 0 ? dx2 / len2 : 0;
+        const uy2 = len2 > 0 ? dy2 / len2 : 0;
         // distance from the center of the vertex
         const offset = 25;
         // size of the pullback corner legs
