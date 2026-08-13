@@ -85,14 +85,13 @@ Ltac2 rec destruct_sigma_tac (t : constr) (l : ident list) :=
   match l with
   | [] => ()
   | [x] =>
-    ltac1:(x t |- assert ( x := t); subst_all1) (Ltac1.of_ident x) (Ltac1.of_constr t)
+      assert ($x := $t); subst_all ()
   | x :: q =>
       let h := Fresh.in_goal @destruct in
-      ltac1:(x t h |- destruct t as [x h]; subst_all1) (Ltac1.of_ident x)
-        (Ltac1.of_constr t) (Ltac1.of_ident h);      
-        destruct_sigma_tac (Control.hyp h) q;
+      destruct $t as [$x $h];
+      destruct_sigma_tac (Control.hyp h) q;
       clear $h
-    end.
+  end.
 
 Ltac2 Notation "destruct_sigma"
     t(constr) "as" l(list1(ident)) :=
