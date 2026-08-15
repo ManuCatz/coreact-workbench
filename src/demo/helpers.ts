@@ -57,39 +57,42 @@ export function buildComposableHost(): { host: Drawing; edges: { he1: ReturnType
     return { host, edges: { he1, he2 } };
 }
 
-export function buildFlagInChildLayerRule(): Drawing {
+export function buildIsMonoInChildLayerRule(): Drawing {
     const drawing = makeDrawing();
     const fv0 = makeVertex(drawing, 'fv0');
     const fv1 = makeVertex(drawing, 'fv1');
     const fv2 = makeVertex(drawing, 'fv2');
     makeEdge(drawing, 'fe1', fv0, fv1);
-    drawing.addLayer('flag-conclusion', 'Flag Conclusion', 'root');
-    drawing.newArtefact('Edge', { source: fv1, target: fv2, mono: { __flag: true, layerId: 'flag-conclusion' } }, { width: 2, bend: 0, label: 'fe2' }, 'root');
-    drawing.newArtefact('Edge', { source: fv0, target: fv2 }, { width: 2, bend: 0, label: 'fe3' }, 'flag-conclusion');
+    const fe2 = drawing.newArtefact('Edge', { source: fv1, target: fv2 }, { width: 2, bend: 0, label: 'fe2' }, 'root');
+    drawing.addLayer('isMono-conclusion', 'IsMono Conclusion', 'root');
+    drawing.newArtefact('Edge', { source: fv0, target: fv2 }, { width: 2, bend: 0, label: 'fe3' }, 'isMono-conclusion');
+    drawing.newArtefact('isMono', { arrow: fe2 }, {}, 'isMono-conclusion');
     drawing.setIsRule(true);
     return drawing;
 }
 
-export function buildFlagOnlyConclusionRule(): Drawing {
+export function buildIsMonoOnlyConclusionRule(): Drawing {
     const drawing = makeDrawing();
     const fv0 = makeVertex(drawing, 'fv0');
     const fv1 = makeVertex(drawing, 'fv1');
     const fv2 = makeVertex(drawing, 'fv2');
     makeEdge(drawing, 'fe1', fv0, fv1);
-    drawing.addLayer('flag-conclusion', 'Flag Conclusion', 'root');
-    drawing.newArtefact('Edge', { source: fv1, target: fv2, mono: { __flag: true, layerId: 'flag-conclusion' } }, { width: 2, bend: 0, label: 'fe2' }, 'root');
+    const fe2 = drawing.newArtefact('Edge', { source: fv1, target: fv2 }, { width: 2, bend: 0, label: 'fe2' }, 'root');
+    drawing.addLayer('isMono-conclusion', 'IsMono Conclusion', 'root');
+    drawing.newArtefact('isMono', { arrow: fe2 }, {}, 'isMono-conclusion');
     drawing.setIsRule(true);
     return drawing;
 }
 
-export function buildFlagInRootRule(): Drawing {
+export function buildIsMonoInRootRule(): Drawing {
     const drawing = makeDrawing();
     const rfv0 = makeVertex(drawing, 'rfv0');
     const rfv1 = makeVertex(drawing, 'rfv1');
     const rfv2 = makeVertex(drawing, 'rfv2');
     makeEdge(drawing, 'rfe1', rfv0, rfv1);
-    drawing.newArtefact('Edge', { source: rfv1, target: rfv2, mono: true }, { width: 2, bend: 0, label: 'rfe2' }, 'root');
-    drawing.addLayer('flag-root-conclusion', 'Root Flag Conclusion', 'root');
+    const rfe2 = drawing.newArtefact('Edge', { source: rfv1, target: rfv2 }, { width: 2, bend: 0, label: 'rfe2' }, 'root');
+    drawing.newArtefact('isMono', { arrow: rfe2 }, {}, 'root');
+    drawing.addLayer('isMono-root-conclusion', 'Root IsMono Conclusion', 'root');
     makeEdge(drawing, 'rfe3', rfv0, rfv2);
     drawing.setIsRule(true);
     return drawing;
@@ -116,9 +119,10 @@ export function buildSecondOrderRule(): Drawing {
     const sv1 = makeVertex(drawing, 'sv1');
     const sv2 = makeVertex(drawing, 'sv2');
     drawing.addLayer('conclusion2', 'Conclusion', 'root');
-    drawing.newArtefact('Edge', { source: sv0, target: sv1, mono: { __flag: true, layerId: 'conclusion2' } }, { width: 2, bend: 0, label: 'sf' }, 'root');
+    const sfe = drawing.newArtefact('Edge', { source: sv0, target: sv1 }, { width: 2, bend: 0, label: 'sf' }, 'root');
     makeEdge(drawing, 'sg', sv1, sv2);
     drawing.newArtefact('Edge', { source: sv0, target: sv2 }, { width: 2, bend: 0, label: 'sh' }, 'conclusion2');
+    drawing.newArtefact('isMono', { arrow: sfe }, {}, 'conclusion2');
     drawing.addLayer('premise-a', 'Premise A', 'root');
     const sdv = drawing.newArtefact('Vertex', {}, { position: [150, 150], label: 'sdv' }, 'premise-a');
     drawing.addLayer('premise-b', 'Premise B', 'premise-a');

@@ -48,42 +48,35 @@ drawing.draw(...);
 ```
 
 
-# Flags
+# Modelling tags as artefacts
 
-Flags are defined as "fake dependencies" directly within the `newSort` method. 
+Properties that used to be modelled as boolean "flags" are now modelled as first-class artefacts of their own sort. For example, a "mono" tag on an edge is defined by an `isMono` sort that depends on an edge:
 
-When defining a sort, if a dependency is assigned the value `"flag"` instead of the name of another sort, it becomes an optional boolean attribute for that artefact.
-
-For example, you may want to define a tag "mono" on an edge:
 ```javascript
 sortStore.newSort("Edge",
-  {source: "Vertex", target: "Vertex", mono: "flag"}, 
+  {source: "Vertex", target: "Vertex"}, 
   {width: "number"}, 
   (data, context) => {
-    // If data.mono is true, draw the arrow differently
+    // draw an arrow
+  })
+  .newSort("isMono",
+  {arrow: "Edge"}, 
+  {}, 
+  (data, context) => {
+    // data.arrow is the Edge artefact; draw a small indicator hook/circle
   });
 ```
 
-When instantiating the artefact, the flag is passed alongside the actual dependencies as a boolean value:
+When instantiating the artefact, the tag is just another artefact whose dependency points at the tagged artefact:
 ```javascript
-drawing.newArtefact("Edge", {source: v0, target: v1, mono: true}, {width: 1, label: "e0"});
+const e0 = drawing.newArtefact("Edge", {source: v0, target: v1}, {width: 1, label: "e0"});
+drawing.newArtefact("isMono", {arrow: e0}, {}, "root");
 ```
 
-### Flags can leave from a selectable layer
-
-A flag may be assigned to leave from any layer that is the artefact's layer or a descendant of it (mirroring the Layer Hierarchy Rule). Pass `{ __flag: true, layerId }` instead of a plain boolean:
-```javascript
-// mono leaves from layer-2, a descendant of the artefact's layer (layer-1)
-drawing.newArtefact("Edge", {source: v1, target: v2, mono: { __flag: true, layerId: "layer-2" }}, {width: 2, label: "e1"}, "layer-1");
-```
-
-`mono: true` is equivalent to `mono: { __flag: true, layerId: <artefact's layer> }`. Passing a layer that does not exist, or that is not the artefact's layer or a descendant of it, throws a `Consistency Check Failed` error.
-
-The flag's layer affects:
-- **Rule matching**: only flags set in the rule's root layer are required for matching; a pattern flag leaving from a root layer matches a host flag when the relative depth between the flag layer and the artefact's layer is equal in both drawings. Flags leaving from child layers are part of the rule's structure, not its pattern, and are ignored during matching.
-- **Layer focus styling**: artefacts whose flag leaves from the focused layer are not dimmed.
-- **Tag-group filtering**: the tree view shows a tag group under the focused layer when any matching artefact's flag leaves from it.
-
-Draw functions still receive only the boolean value for flags (via `getResolvedData()`), never the layer.
+Tag artefacts obey the same rules as any other sort:
+- **Layer Hierarchy Rule**: an `isMono` artefact in layer `L` may reference an edge in `L` or any of its lower ancestor layers.
+- **Rule matching**: an `isMono` artefact in the rule's root layer is part of the pattern and must be matched in the host; an `isMono` in a child/conclusion layer is rule structure and is created in the host root when the rule is applied.
+- **Layer focus styling**: tag artefacts in the focused layer are not dimmed.
+- **Reverse dependencies**: `getResolvedData()` (via `buildReverseDependencyInfo()`) injects `isMono: true` on an edge that has a visible `isMono` artefact, so draw functions can style the edge itself.
 
 I want rocq export feature for first-order rules. As an example, consider a rule named Comp whose root layer consists of two composable arrows f : a -> b and g : b -> c, and the child layer consists of one arrow h : a -> c together with a triangle artefact named T. The rocq export should yield: Comp : forall (a : Vertex)(b : Vertex)(c : Vertex)(f : Edge {| source := a, target := b |}) (g : Edge {| source := b, target := c |}), {|h : Edge {| source := a, target := c |}

@@ -1,6 +1,6 @@
 import { Artefact, Drawing, DrawingStore, SortStore } from "./index";
 import { drawingExportNames, ruleTypeInfo, newExportRegistry, renderExactTerm, renderForallChain, renderSigma, sanitizeIdent } from "./rocq_export";
-import type { DrawingExportNames, LayerElement, RuleTypeInfo } from "./rocq_export";
+import type { LayerElement, RuleTypeInfo } from "./rocq_export";
 
 function artefactToDataId(drawing: Drawing, art: Artefact): string {
     const idx = drawing.getArtefacts().indexOf(art);
@@ -8,17 +8,6 @@ function artefactToDataId(drawing: Drawing, art: Artefact): string {
         throw new Error("Consistency Check Failed: Artefact does not belong to drawing.");
     }
     return `art_${idx}`;
-}
-
-function resolveHostFlagFieldName(hostNames: DrawingExportNames, hostId: string, flagKey: string): string | undefined {
-    // A rule flag element at relative depth 0 (own-layer) or a conclusion flag is
-    // realised on the host artefact's own layer, so the per-layer proof field is
-    // keyed by that layer id.
-    const hostArtefact = hostNames.model.artefactById.get(hostId);
-    if (!hostArtefact) {
-        return undefined;
-    }
-    return hostNames.flagFieldNames.get(`${hostId}::${flagKey}::${hostArtefact.layerId}`);
 }
 
 function escapeRegExp(s: string): string {
@@ -167,7 +156,7 @@ export class RocqRecorder {
         }
 
         // Build the rule argument list in the exported type's binder order
-        // (artefacts, flags, and equalities interleaved topologically).
+        // (artefacts and equalities interleaved topologically).
         const tupleValues: string[] = [];
         for (const el of ruleInfo.rootElements) {
             if (el.kind === "equation") {
@@ -184,30 +173,18 @@ export class RocqRecorder {
             if (!matchedHostId) {
                 throw new Error(`Consistency Check Failed: Pattern artefact '${artefactId}' was not matched in rule application.`);
             }
-            if (el.kind === "flag") {
-                if (!el.flagKey) {
-                    throw new Error(`Consistency Check Failed: Rule element '${el.name}' in '${savedRuleName}' has no flag key.`);
-                }
-                const hostFlagName = resolveHostFlagFieldName(hostNames, matchedHostId, el.flagKey);
-                if (!hostFlagName) {
-                    throw new Error(`Consistency Check Failed: No flag field name for '${el.flagKey}' on artefact '${artefactId}' in rule '${savedRuleName}'.`);
-                }
-                tupleValues.push(hostFlagName);
-            } else {
-                const hostFieldName = hostNames.fieldNames.get(matchedHostId);
-                if (!hostFieldName) {
-                    throw new Error(`Consistency Check Failed: No field name assigned for matched host artefact '${matchedHostId}'.`);
-                }
-                tupleValues.push(hostFieldName);
+            const hostFieldName = hostNames.fieldNames.get(matchedHostId);
+            if (!hostFieldName) {
+                throw new Error(`Consistency Check Failed: No field name assigned for matched host artefact '${matchedHostId}'.`);
             }
+            tupleValues.push(hostFieldName);
         }
 
         const argsStr = tupleValues.join(" ");
 
         // Names for the conclusion binders, in the exported conclusion's
         // (dependency-ordered) order, always sourced from the host layer:
-        // created host copies for artefacts/equalities and host flag field
-        // names for flags.
+        // created host copies for artefacts/equalities.
         const ruleArtById = new Map<string, Artefact>();
         for (const ruleArt of ruleDrawing.getArtefacts()) {
             ruleArtById.set(artefactToDataId(ruleDrawing, ruleArt), ruleArt);
@@ -215,23 +192,6 @@ export class RocqRecorder {
 
         const conclusionHostNames = ruleInfo.conclusionElements.map(el => {
             const ruleArt = el.artefactId ? ruleArtById.get(el.artefactId) : undefined;
-            if (el.kind === "flag") {
-                if (!el.flagKey) {
-                    throw new Error(`Consistency Check Failed: Conclusion element '${el.name}' in rule '${savedRuleName}' has no flag key.`);
-                }
-                let hostId = matchMap.get(el.artefactId ?? "");
-                if (!hostId && ruleArt) {
-                    const hostCopy = applicationResult.created.get(ruleArt);
-                    if (hostCopy) {
-                        hostId = artefactToDataId(hostDrawing, hostCopy);
-                    }
-                }
-                const hostFlagName = hostId ? resolveHostFlagFieldName(hostNames, hostId, el.flagKey) : undefined;
-                if (!hostFlagName) {
-                    throw new Error(`Consistency Check Failed: No host flag field name for '${el.flagKey}' on '${el.name}' in rule '${savedRuleName}'.`);
-                }
-                return hostFlagName;
-            }
             if (!ruleArt) {
                 throw new Error(`Consistency Check Failed: Conclusion element '${el.name}' in rule '${savedRuleName}' has no artefact id.`);
             }
@@ -366,22 +326,6 @@ export class RocqRecorder {
                         w = `conj eq_refl (${w})`;
                     }
                     return w;
-                }
-                case "flag": {
-                    if (!el.flagKey) {
-                        throw new Error(`Consistency Check Failed: Flag element '${el.name}' has no flagKey.`);
-                    }
-                    const live = el.artefactId ? idToLiveArt.get(el.artefactId) : undefined;
-                    const parent = live ? (live.layerId === this.conclusionLayerId ? match.get(live) : live) : undefined;
-                    if (!parent) {
-                        throw new Error(`Consistency Check Failed: No host parent matched for flagged artefact '${el.artefactId}' in conclusion layer '${this.conclusionLayerId}'.`);
-                    }
-                    const parentDataId = artefactToDataId(hostDrawing, parent);
-                    const hostFlagName = resolveHostFlagFieldName(hostNames, parentDataId, el.flagKey);
-                    if (!hostFlagName) {
-                        throw new Error(`Consistency Check Failed: Matched parent for flagged artefact '${el.artefactId}' has no corresponding flag '${el.flagKey}' in '${this.drawingName}'.`);
-                    }
-                    return hostFlagName;
                 }
             }
         };

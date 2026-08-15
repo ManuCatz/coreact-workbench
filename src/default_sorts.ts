@@ -54,7 +54,7 @@ function hookStartOffset(width: number): number {
         )
         .newSort(
             "Edge",
-            { source: "Vertex", target: "Vertex", mono: "flag" }, // Dependencies + flag
+            { source: "Vertex", target: "Vertex" }, // Dependencies 
             { width: "number", bend: "number" },
             (data: any, context: import('./types').D3Context) => {
                 const srcPos = data.source.position;
@@ -121,24 +121,15 @@ function hookStartOffset(width: number): number {
                 lineGroup.append("path")
                     .attr("d", `M ${startX},${startY} Q ${cx},${cy} ${baseX},${baseY}`)
                     .attr("fill", "none")
-                    .attr("stroke", data.mono ? "#2c3e50" : "#999")
-                    .attr("stroke-width", data.width)
-                    .attr("stroke-dasharray", data.mono ? "5,5" : "none");
+                    .attr("stroke", "#999")
+                    .attr("stroke-width", data.width);
 
                 // Manual arrowhead polygon
                 lineGroup.append("path")
                     .attr("d", `M ${baseX - px * halfW},${baseY - py * halfW} L ${tipX},${tipY} L ${baseX + px * halfW},${baseY + py * halfW} Z`)
-                    .attr("fill", data.mono ? "#2c3e50" : "#999")
+                    .attr("fill", "#999")
                     .attr("stroke", "none");
 
-                if (data.mono) {
-                    // Draw a small indicator hook/circle if mono flag is true
-                    lineGroup.append("circle")
-                        .attr("cx", midX)
-                        .attr("cy", midY)
-                        .attr("r", 4)
-                        .attr("fill", "#e74c3c");
-                }
 
                 if (data.label) {
                     context.append("text")
@@ -290,7 +281,7 @@ function hookStartOffset(width: number): number {
                 const srcPos = data.arrow.source.position;
                 const tgtPos = data.arrow.target.position;
                 const bend = typeof data.arrow.bend === "number" ? data.arrow.bend : 0;
-                const strokeColor = data.arrow.mono ? "#2c3e50" : "#999";
+                const strokeColor = "#999";
                 const baseWidth = typeof data.arrow.width === "number" ? data.arrow.width : 2;
                 const strokeWidth = baseWidth;
 

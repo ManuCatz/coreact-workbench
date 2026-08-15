@@ -490,13 +490,6 @@ body {
     margin-bottom: 0;
     margin-left: 6px;
 }
-.form-group.flag-row {
-    flex-wrap: wrap;
-}
-.form-group.flag-row .flag-layer-select {
-    width: 100%;
-    margin-top: 6px;
-}
 .form-group.position {
     display: flex;
     gap: 6px;

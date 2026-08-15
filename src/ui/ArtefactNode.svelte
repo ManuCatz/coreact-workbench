@@ -13,7 +13,6 @@
     import {
         getArtefactLabel,
         equalityChildren,
-        activeFlagsLabel,
         mergeBaseOpacityFor,
         isProvablyEqualCandidate,
         onArtefactNodeClick,
@@ -23,7 +22,6 @@
 
     export let artefact: Artefact;
     export let dependencyKey: string | null = null;
-    export let isTagGroupCtx: string | null = null;
     export let parentArtefact: Artefact | null = null;
     export let rootNode = false;
 
@@ -32,8 +30,6 @@
     let children: Artefact[] = [];
     let baseLabel = '';
     let equalitySuffix = '';
-    let flags: string[] = [];
-    let flagSuffix = '';
     let prefix = '';
     let layerObj: Layer | null | undefined;
     let isLayerVis = true;
@@ -42,13 +38,10 @@
     let inspectedNode = false;
     let nodeOpacity = 1;
     let depEntries: [string, Artefact][] = [];
-    let flagEntries: [string, boolean][] = [];
 
     $: $version, children = equalityChildren(artefact);
     $: $version, baseLabel = getArtefactLabel(artefact);
     $: $version, equalitySuffix = artefact.sortName === 'Equality' && children.length > 0 ? ` [${children[0].sortName}]` : '';
-    $: $version, flags = activeFlagsLabel(artefact);
-    $: $version, flagSuffix = flags.length > 0 ? ` (${flags.join(', ')})` : '';
     $: $version, prefix = dependencyKey ? `${dependencyKey}: ` : '';
     $: $version, layerObj = drawing.getLayer(artefact.layerId);
     $: $version, isLayerVis = layerObj ? drawing.isLayerVisible(layerObj.id) : true;
@@ -58,12 +51,7 @@
         $inspectedArtefact === artefact
         || ($mergeMode && ($mergeFirstArtefact === artefact || $mergeSecondArtefact === artefact));
 
-    $: $version, depEntries = (Object.entries(artefact.dependencies) as [string, Artefact | boolean][]).filter(
-        (entry): entry is [string, Artefact] => typeof entry[1] !== 'boolean'
-    );
-    $: $version, flagEntries = (Object.entries(artefact.dependencies) as [string, Artefact | boolean][]).filter(
-        (entry): entry is [string, boolean] => entry[1] === true
-    );
+    $: $version, depEntries = Object.entries(artefact.dependencies) as [string, Artefact][];
 
     $: {
         $version;
@@ -107,7 +95,7 @@
     }
 
     function onRemove(): void {
-        removeArtefactNode(artefact, parentArtefact, isTagGroupCtx);
+        removeArtefactNode(artefact, parentArtefact);
     }
 </script>
 
@@ -156,7 +144,7 @@
                     onHeaderClick();
                 }
             }}
-        >{prefix}{baseLabel}{equalitySuffix}{flagSuffix}</span>
+        >{prefix}{baseLabel}{equalitySuffix}</span>
         {#if artefact.sortName === 'Equality' || layerBadgeText}
             <span class="layer-badge" style={!isLayerVis ? 'background-color: #f5b7b1; color: #78281f;' : ''}>
                 {layerBadgeText}
@@ -169,8 +157,8 @@
             class="remove-btn"
             role="button"
             tabindex="0"
-            title={isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : 'Remove artefact'}
-            aria-label={isTagGroupCtx ? `Remove tag '${isTagGroupCtx}'` : 'Remove artefact'}
+            title="Remove artefact"
+            aria-label="Remove artefact"
             onclick={(e) => {
                 e.stopPropagation();
                 onRemove();
@@ -190,32 +178,6 @@
             <div class="node-children">
                 {#each depEntries as [depKey, depArt]}
                     <ArtefactNode artefact={depArt} dependencyKey={depKey} parentArtefact={artefact} />
-                {/each}
-                {#each flagEntries as [flagKey]}
-                    <div class="tree-node empty">
-                        <div class="node-header">
-                            <span class="toggle-icon"></span>
-                            <span class="node-label">{flagKey}</span>
-                            <span
-                                class="remove-btn"
-                                role="button"
-                                tabindex="0"
-                                title={`Remove tag '${flagKey}'`}
-                                aria-label={`Remove tag '${flagKey}'`}
-                                onclick={(e) => {
-                                    e.stopPropagation();
-                                    removeArtefactNode(artefact, null, flagKey);
-                                }}
-                                onkeydown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        removeArtefactNode(artefact, null, flagKey);
-                                    }
-                                }}
-                            >×</span>
-                        </div>
-                    </div>
                 {/each}
             </div>
         {/if}

@@ -20,17 +20,12 @@
         isDraftComplete,
         setDraftLayer,
         setDraftDataField,
-        toggleDraftFlagLayer,
-        toggleDraftFlag,
         setArtefactLayer,
         setInspectedLabel,
         setArtefactDataField,
-        setArtefactFlag,
-        toggleArtefactFlagLayer,
         startMergeMode,
         togglePositionPicker,
         isPositionPickerActive,
-        flagLayerCandidates,
         equalityChildren,
         pushToast
     } from './store';
@@ -220,8 +215,7 @@
     {@const draftSortDef = sortStore.getSort(draft.sortName)}
     {@const draftProxy = { data: draft.data } as Artefact}
     {#if draftSortDef}
-        {@const nonFlagDeps = Object.entries(draftSortDef.dependencies).filter(([_, expected]) => expected !== 'flag')}
-        {@const flagDeps = Object.entries(draftSortDef.dependencies).filter(([_, expected]) => expected === 'flag')}
+        {@const allDeps = Object.entries(draftSortDef.dependencies)}
         <h3 style="margin-top: 0;">New {draft.sortName}</h3>
 
         <div>
@@ -250,9 +244,9 @@
                 >
                     {$dependencyPickingFor === 'Equality' ? 'Click artefact in tree...' : '+ Pick Artefact'}
                 </button>
-            {:else if nonFlagDeps.length > 0}
+            {:else if allDeps.length > 0}
                 <h4 style="margin: 10px 0 5px 0; font-size: 0.95rem; color: #444;">Dependencies</h4>
-                {#each nonFlagDeps as [depKey, expectedSort]}
+                {#each allDeps as [depKey, expectedSort]}
                     {@const picked = draft.dependencies[depKey]}
                     <div class="form-group">
                         <label for="draft-dep-{depKey}">{depKey} ({expectedSort})</label>
@@ -262,7 +256,7 @@
                             class="pick-dep-btn {$dependencyPickingFor === depKey ? 'active' : ''}"
                             onclick={() => toggleDepPicking(depKey)}
                         >
-                            {#if picked && typeof picked !== 'boolean'}
+                            {#if picked}
                                 ✓ {picked.data.label || '(unnamed)'}
                             {:else if $dependencyPickingFor === depKey}
                                 Select in tree...
@@ -299,43 +293,6 @@
                 onPickPosition={(attrName) => togglePositionPicker(draftProxy, attrName)}
             />
 
-            {#if flagDeps.length > 0}
-                <h4 style="margin: 15px 0 5px 0; font-size: 0.95rem; color: #444;">Flags</h4>
-                {#each flagDeps as [flagKey]}
-                    {@const flagActive = draft.dependencies[flagKey] === true}
-                    <div class="form-group checkbox flag-row">
-                        <input
-                            id="draft-flag-{flagKey}"
-                            type="checkbox"
-                            checked={flagActive}
-                            onchange={(e) => toggleDraftFlag(flagKey, (e.currentTarget as HTMLInputElement).checked)}
-                        />
-                        <label for="draft-flag-{flagKey}">{flagKey}</label>
-                    </div>
-                    {#if flagActive}
-                        <div class="form-group flag-layers">
-                            <div style="font-size: 0.78rem; color: #666; font-style: italic; margin-bottom: 4px;">
-                                Visible in layer(s) (unchecking all removes flag):
-                            </div>
-                            {#each flagLayerCandidates(draft.layerId) as candidateId}
-                                {@const isOwn = candidateId === draft.layerId}
-                                {@const stored = draft.flagLayers[flagKey]}
-                                {@const activeLayers = (stored && stored.length > 0) ? stored : [draft.layerId]}
-                                {@const isChecked = activeLayers.includes(candidateId)}
-                                <label class="flag-layer-check">
-                                    <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onchange={() => toggleDraftFlagLayer(flagKey, candidateId)}
-                                    />
-                                    {drawing.getLayer(candidateId)?.name ?? candidateId}{isOwn ? ' (own)' : ''}
-                                </label>
-                            {/each}
-                        </div>
-                    {/if}
-                {/each}
-            {/if}
-
             <div class="action-btns">
                 <button type="button" class="btn btn-cancel" onclick={cancelDraft}>Cancel</button>
                 <button
@@ -353,7 +310,6 @@
     {@const art = $inspectedArtefact}
     {@const artSortDef = sortStore.getSort(art.sortName)}
     {#if artSortDef}
-        {@const artFlagDeps = Object.entries(artSortDef.dependencies).filter(([_, expected]) => expected === 'flag')}
         <h3 style="margin-top: 0;">
             {art.sortName}
             {#if art.sortName === 'Equality' && equalityChildren(art).length > 0}
@@ -405,41 +361,6 @@
                 isPickerActive={(attrName) => isPositionPickerActive(art, attrName)}
                 onPickPosition={(attrName) => togglePositionPicker(art, attrName)}
             />
-
-            {#if artFlagDeps.length > 0}
-                <h4 style="margin-top: 15px; margin-bottom: 10px; font-size: 0.95rem; color: #444;">Flags</h4>
-                {#each artFlagDeps as [flagKey]}
-                    {@const flagActive = art.dependencies[flagKey] === true}
-                    <div class="form-group checkbox flag-row">
-                        <input
-                            id="inspect-flag-{flagKey}"
-                            type="checkbox"
-                            checked={flagActive}
-                            onchange={(e) => setArtefactFlag(art, flagKey, (e.currentTarget as HTMLInputElement).checked)}
-                        />
-                        <label for="inspect-flag-{flagKey}">{flagKey}</label>
-                    </div>
-                    {#if flagActive}
-                        <div class="form-group flag-layers">
-                            <div style="font-size: 0.78rem; color: #666; font-style: italic; margin-bottom: 4px;">
-                                Visible in layer(s) (unchecking all removes flag):
-                            </div>
-                            {#each flagLayerCandidates(art.layerId) as candidateId}
-                                {@const isOwn = candidateId === art.layerId}
-                                {@const isChecked = art.getFlagLayers(flagKey).includes(candidateId)}
-                                <label class="flag-layer-check">
-                                    <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onchange={() => toggleArtefactFlagLayer(art, flagKey, candidateId)}
-                                    />
-                                    {drawing.getLayer(candidateId)?.name ?? candidateId}{isOwn ? ' (own)' : ''}
-                                </label>
-                            {/each}
-                        </div>
-                    {/if}
-                {/each}
-            {/if}
 
             <button
                 type="button"

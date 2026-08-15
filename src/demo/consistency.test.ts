@@ -28,40 +28,12 @@ describe('consistency checks', () => {
         ).toThrowError(/Consistency Check Failed/);
     });
 
-    it('rejects an unexpected dependency/flag', () => {
+    it('rejects an unexpected dependency', () => {
         const drawing = makeDrawing();
         const v0 = makeVertex(drawing, 'v0');
         const v1 = makeVertex(drawing, 'v1');
         expect(() =>
-            drawing.newArtefact('Edge', { source: v0, target: v1, unexpectedFlag: true }, { width: 4, bend: 0 })
-        ).toThrowError(/Consistency Check Failed/);
-    });
-
-    it('rejects a bad flag type', () => {
-        const drawing = makeDrawing();
-        const v0 = makeVertex(drawing, 'v0');
-        const v1 = makeVertex(drawing, 'v1');
-        expect(() =>
-            drawing.newArtefact('Edge', { source: v0, target: v1, mono: 'yes' as unknown as boolean }, { width: 4, bend: 0 })
-        ).toThrowError(/Consistency Check Failed/);
-    });
-
-    it('rejects a flag leaving from a non-descendant layer', () => {
-        const drawing = makeDrawing();
-        drawing.addLayer('layer-1', 'Child Layer 1', 'root');
-        const v0 = makeVertex(drawing, 'v0');
-        const v1 = makeVertex(drawing, 'v1');
-        expect(() =>
-            drawing.newArtefact('Edge', { source: v0, target: v1, mono: { __flag: true, layerId: 'root' } }, { width: 4, bend: 0 }, 'layer-1')
-        ).toThrowError(/Consistency Check Failed/);
-    });
-
-    it('rejects a flag leaving from a nonexistent layer', () => {
-        const drawing = makeDrawing();
-        const v0 = makeVertex(drawing, 'v0');
-        const v1 = makeVertex(drawing, 'v1');
-        expect(() =>
-            drawing.newArtefact('Edge', { source: v0, target: v1, mono: { __flag: true, layerId: 'does-not-exist' } }, { width: 4, bend: 0 })
+            drawing.newArtefact('Edge', { source: v0, target: v1, unexpected: v0 }, { width: 4, bend: 0 })
         ).toThrowError(/Consistency Check Failed/);
     });
 
@@ -169,7 +141,7 @@ describe('artefact merge', () => {
 });
 
 describe('layer provability', () => {
-    it('is provable without flags and non-provable when a flag is established in the layer', () => {
+    it('is provable without isMono artefacts and non-provable when an isMono artefact is established in the layer', () => {
         const drawing = makeDrawing();
         drawing.addLayer('prov-child', 'Prov Child', 'root');
         const pv0 = makeVertex(drawing, 'pv0');
@@ -181,13 +153,12 @@ describe('layer provability', () => {
 
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
 
-        pre.dependencies['mono'] = true;
-        pre.flagLayers['mono'] = ['prov-child'];
+        drawing.newArtefact('isMono', { arrow: pre }, {}, 'prov-child');
 
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(false);
     });
 
-    it('is provable if a flag is established in the layer but also in an ancestor layer', () => {
+    it('is provable if an isMono artefact is established in the layer and in an ancestor layer', () => {
         const drawing = makeDrawing();
         drawing.addLayer('prov-child', 'Prov Child', 'root');
         const pv0 = makeVertex(drawing, 'pv0');
@@ -197,9 +168,9 @@ describe('layer provability', () => {
 
         drawing.addEqualityArtefactUnchecked([pre, pce], 'root');
 
-        // Flag established in root AND prov-child
-        pre.dependencies['mono'] = true;
-        pre.flagLayers['mono'] = ['root', 'prov-child'];
+        // isMono established in root AND prov-child
+        drawing.newArtefact('isMono', { arrow: pre }, {}, 'root');
+        drawing.newArtefact('isMono', { arrow: pre }, {}, 'prov-child');
 
         expect(drawing.checkLayerProvable('prov-child').provable).toBe(true);
     });

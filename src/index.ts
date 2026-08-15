@@ -46,9 +46,9 @@ export class SortStore {
         drawFunction: (data: any, context: D3Context) => D3Context | null,
         initContext?: (context: D3Context) => void
     ): this {
-        // Consistency check: all dependencies must be already defined sorts, unless it's a flag
+        // Consistency check: all dependencies must be already defined sorts
         for (const [depKey, depSortName] of Object.entries(dependencies)) {
-            if (depSortName !== "flag" && !this.sorts.has(depSortName)) {
+            if (!this.sorts.has(depSortName)) {
                 throw new Error(`Consistency Check Failed: Dependency sort '${depSortName}' for dependency '${depKey}' in sort '${name}' is not defined.`);
             }
         }
@@ -82,17 +82,6 @@ export class SortStore {
     }
 }
 
-export type FlagRef = { __flag: true; layerIds: string[] } | { __flag: true; layerId: string };
-
-export type ArtefactDependency = Artefact | boolean | FlagRef;
-
-/**
- * A dependency after FlagRefs have been normalized by `Drawing.newArtefact`
- * into a `true` boolean plus a `flagLayers` entry. This is what
- * `Artefact.dependencies` actually holds at runtime.
- */
-export type ResolvedDependency = Artefact | boolean;
-
 /**
  * The legal primitive values for a sort's data attributes, matching the
  * attribute types "number", "string", "boolean" and "position".
@@ -113,41 +102,14 @@ export interface ReverseDependencyInfo {
 
 export class Artefact {
     public svgElement: D3Context | null = null; // Store the rendered SVG element
-    // A flag may be established in several layers at once; the artefact's own
-    // layer is always implicit and never stored here.
-    public flagLayers: Record<string, string[]> = {};
 
     constructor(
         public sortName: string,
-        public dependencies: Record<string, ResolvedDependency>,
+        public dependencies: Record<string, Artefact>,
         public data: Record<string, any>,
         protected drawFunction: (data: any, context: D3Context) => D3Context | null,
         public layerId: string = "root"
     ) {}
-
-    getFlagLayer(flagKey: string): string {
-        return this.getFlagLayers(flagKey)[0];
-    }
-
-    getFlagLayers(flagKey: string): string[] {
-        const layers = this.flagLayers[flagKey];
-        if (layers && layers.length > 0) {
-            return Array.from(new Set(layers));
-        }
-        return [this.layerId];
-    }
-
-    getEffectiveFlagLayers(): Set<string> {
-        const layers = new Set<string>();
-        for (const [key, val] of Object.entries(this.dependencies)) {
-            if (val === true) {
-                for (const layer of this.getFlagLayers(key)) {
-                    layers.add(layer);
-                }
-            }
-        }
-        return layers;
-    }
 
     getResolvedData(isLayerVisible?: (layerId: string) => boolean, reverseInfo?: ReverseDependencyInfo): Record<string, any> {
         const result = { ...this.data };
@@ -162,15 +124,7 @@ export class Artefact {
             }
         }
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
-            if (typeof depArtefact === "boolean") {
-                if (depArtefact === true && isLayerVisible) {
-                    result[key] = this.getFlagLayers(key).some(layer => isLayerVisible(layer));
-                } else {
-                    result[key] = depArtefact;
-                }
-            } else {
-                result[key] = depArtefact.getResolvedData(isLayerVisible, reverseInfo);
-            }
+            result[key] = depArtefact.getResolvedData(isLayerVisible, reverseInfo);
         }
         return result;
     }
@@ -179,10 +133,8 @@ export class Artefact {
         const result = new Set<Artefact>();
         result.add(this);
         for (const depArtefact of Object.values(this.dependencies)) {
-            if (typeof depArtefact !== "boolean") {
-                for (const nestedDep of depArtefact.getSelfAndDependencies()) {
-                    result.add(nestedDep);
-                }
+            for (const nestedDep of depArtefact.getSelfAndDependencies()) {
+                result.add(nestedDep);
             }
         }
         return result;
@@ -201,7 +153,7 @@ export class EqualityArtefact extends Artefact {
         data: Record<string, any> = {},
         layerId: string = "root"
     ) {
-        const deps: Record<string, ResolvedDependency> = {};
+        const deps: Record<string, Artefact> = {};
         children.forEach((child, idx) => {
             deps[`${idx}`] = child;
         });
@@ -211,7 +163,7 @@ export class EqualityArtefact extends Artefact {
 
     public setChildren(newChildren: Artefact[]): void {
         this.children = [...newChildren];
-        const newDeps: Record<string, ResolvedDependency> = {};
+        const newDeps: Record<string, Artefact> = {};
         this.children.forEach((child, idx) => {
             newDeps[`${idx}`] = child;
         });
@@ -332,32 +284,6 @@ export class Drawing {
         const parentLayer = this.layers.get(parentId);
         const parentName = parentLayer ? parentLayer.name : parentId;
 
-        const labelOf = (a: Artefact): string => (typeof a.data.label === "string" ? a.data.label : a.sortName);
-
-        const parentAncestors = this.getAncestors(parentId);
-        const layerFlagScope = this.getDescendants(layerId);
-
-        for (const art of this.artefacts) {
-            for (const [flagKey, flagVal] of Object.entries(art.dependencies)) {
-                if (flagVal === true) {
-                    const flagLayers = art.getFlagLayers(flagKey);
-                    const parentSeesFlag = flagLayers.some(l => parentAncestors.has(l));
-
-                    if (!parentSeesFlag) {
-                        for (const flagLayer of flagLayers) {
-                            if (layerFlagScope.has(flagLayer)) {
-                                const flagLayerName = this.layers.get(flagLayer)?.name || flagLayer;
-                                return {
-                                    provable: false,
-                                    reason: `Flag '${flagKey}' on artefact '${labelOf(art)}' (${art.sortName}) is established in layer '${flagLayerName}', within layer '${layer.name}' or its descendants; the layer is not provable in parent layer '${parentName}'.`
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         const layerArtefacts = this.artefacts.filter(a => a.layerId === layerId);
         const parentArtefacts = this.artefacts.filter(b => b.layerId === parentId);
 
@@ -421,32 +347,19 @@ export class Drawing {
 
                 let ok = true;
                 for (const [k, dep] of Object.entries(a.dependencies)) {
-                    if (typeof dep === "boolean") {
-                        const set = dep === true;
-                        const candSet = cand.dependencies[k] === true;
-                        if (set !== candSet) {
-                            ok = false;
-                            break;
-                        }
-                        if (set && !this.flagsMatch(a, cand, k)) {
-                            ok = false;
-                            break;
-                        }
-                    } else {
-                        const hostDep = cand.dependencies[k];
-                        if (typeof hostDep === "boolean" || hostDep === undefined) {
-                            ok = false;
-                            break;
-                        }
-                        const expected = patternSet.has(dep) ? assignment.get(dep) : dep;
-                        if (expected === undefined) {
-                            ok = false;
-                            break;
-                        }
-                        if (hostDep !== expected && !this.areEqual(hostDep, expected, parentId)) {
-                            ok = false;
-                            break;
-                        }
+                    const hostDep = cand.dependencies[k];
+                    if (hostDep === undefined) {
+                        ok = false;
+                        break;
+                    }
+                    const expected = patternSet.has(dep) ? assignment.get(dep) : dep;
+                    if (expected === undefined) {
+                        ok = false;
+                        break;
+                    }
+                    if (hostDep !== expected && !this.areEqual(hostDep, expected, parentId)) {
+                        ok = false;
+                        break;
                     }
                 }
                 if (!ok) continue;
@@ -574,18 +487,6 @@ export class Drawing {
             this.layers.delete(id);
         }
 
-        // Reset any surviving flag whose layer was deleted to the artefact's own layer
-        for (const art of this.artefacts) {
-            for (const [flagKey, flagLayerArr] of Object.entries(art.flagLayers)) {
-                const surviving = flagLayerArr.filter(flagLayer => !descendants.has(flagLayer));
-                if (surviving.length > 0) {
-                    art.flagLayers[flagKey] = surviving;
-                } else {
-                    delete art.flagLayers[flagKey];
-                }
-            }
-        }
-
         if (this.focusedLayerId && descendants.has(this.focusedLayerId)) {
             this.focusedLayerId = null;
         }
@@ -605,12 +506,10 @@ export class Drawing {
 
         // Check artefact's dependencies
         for (const [depKey, depVal] of Object.entries(artefact.dependencies)) {
-            if (typeof depVal !== "boolean") {
-                if (!allowedAncestors.has(depVal.layerId)) {
-                    const depLayerName = this.layers.get(depVal.layerId)?.name || depVal.layerId;
-                    const targetLayerName = this.layers.get(targetLayerId)?.name || targetLayerId;
-                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' (in layer '${depLayerName}') is not in layer '${targetLayerName}' or any of its lower ancestor layers.`);
-                }
+            if (!allowedAncestors.has(depVal.layerId)) {
+                const depLayerName = this.layers.get(depVal.layerId)?.name || depVal.layerId;
+                const targetLayerName = this.layers.get(targetLayerId)?.name || targetLayerId;
+                throw new Error(`Consistency Check Failed: Dependency '${depKey}' (in layer '${depLayerName}') is not in layer '${targetLayerName}' or any of its lower ancestor layers.`);
             }
         }
 
@@ -625,25 +524,6 @@ export class Drawing {
                         const otherLayerName = this.layers.get(otherArt.layerId)?.name || otherArt.layerId;
                         throw new Error(`Consistency Check Failed: Artefact '${otherArt.data.label || otherArt.sortName}' (in layer '${otherLayerName}') depends on this artefact, but layer '${targetLayerName}' is not in its lower ancestor layers.`);
                     }
-                }
-            }
-        }
-
-        // Drop old own layer if explicitly stored, since the artefact is moving to targetLayerId.
-        for (const [flagKey, flagLayerArr] of Object.entries(artefact.flagLayers)) {
-            const withoutOldOwn = flagLayerArr.filter(l => l !== artefact.layerId);
-            if (withoutOldOwn.length > 0) {
-                artefact.flagLayers[flagKey] = withoutOldOwn;
-            } else {
-                delete artefact.flagLayers[flagKey];
-            }
-        }
-
-        // Check flags: each set flag must leave from the new layer or one of its descendants
-        for (const [flagKey, flagValue] of Object.entries(artefact.dependencies)) {
-            if (flagValue === true) {
-                for (const flagLayer of artefact.getFlagLayers(flagKey)) {
-                    this.validateFlagLayer(flagLayer, targetLayerId, flagKey);
                 }
             }
         }
@@ -785,21 +665,15 @@ export class Drawing {
         for (let i = 1; i < uniqueArtefacts.length; i++) {
             const otherArt = uniqueArtefacts[i];
 
-            for (const [depKey, depSortName] of Object.entries(sortDef.dependencies)) {
+            for (const [depKey] of Object.entries(sortDef.dependencies)) {
                 const firstDep = firstArt.dependencies[depKey];
                 const otherDep = otherArt.dependencies[depKey];
 
-                if (depSortName === "flag") {
-                    if (!this.flagsMatch(firstArt, otherArt, depKey)) {
-                        throw new Error(`Consistency Check Failed: Flag dependency '${depKey}' differs between artefacts in equality artefact.`);
-                    }
-                } else {
-                    if (!firstDep || typeof firstDep === "boolean" || !otherDep || typeof otherDep === "boolean") {
-                        throw new Error(`Consistency Check Failed: Missing artefact dependency '${depKey}' for equality check.`);
-                    }
-                    if (!this.areEqual(firstDep, otherDep, layerId)) {
-                        throw new Error(`Consistency Check Failed: Dependencies '${depKey}' of artefacts '${firstArt.data.label || firstArt.sortName}' and '${otherArt.data.label || otherArt.sortName}' are not equal at layer '${layerId}'.`);
-                    }
+                if (!firstDep || !otherDep) {
+                    throw new Error(`Consistency Check Failed: Missing artefact dependency '${depKey}' for equality check.`);
+                }
+                if (!this.areEqual(firstDep, otherDep, layerId)) {
+                    throw new Error(`Consistency Check Failed: Dependencies '${depKey}' of artefacts '${firstArt.data.label || firstArt.sortName}' and '${otherArt.data.label || otherArt.sortName}' are not equal at layer '${layerId}'.`);
                 }
             }
         }
@@ -883,7 +757,7 @@ export class Drawing {
 
     newArtefact(
         sortName: string,
-        dependencies: Record<string, ArtefactDependency>,
+        dependencies: Record<string, Artefact>,
         data: Record<string, any>,
         layerId?: string
     ): Artefact {
@@ -893,7 +767,7 @@ export class Drawing {
                 children.push(...data.children);
             } else {
                 for (const val of Object.values(dependencies)) {
-                    if (val && typeof val !== "boolean" && !this.isFlagRef(val)) {
+                    if (val) {
                         children.push(val);
                     }
                 }
@@ -916,24 +790,18 @@ export class Drawing {
         // 1. Validate Dependencies
         for (const [depKey, expectedSortName] of Object.entries(sortDef.dependencies)) {
             const providedValue = dependencies[depKey];
-            
-            if (expectedSortName === "flag") {
-                if (providedValue !== undefined && typeof providedValue !== "boolean" && !this.isFlagRef(providedValue)) {
-                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected flag (boolean or { layerId }), but got '${typeof providedValue}'.`);
-                }
-            } else {
-                if (!providedValue || typeof providedValue === "boolean" || this.isFlagRef(providedValue)) {
-                    throw new Error(`Consistency Check Failed: Missing dependency '${depKey}' for artefact of sort '${sortName}'.`);
-                }
-                if (providedValue.sortName !== expectedSortName) {
-                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected sort '${expectedSortName}', but got '${providedValue.sortName}'.`);
-                }
-                // Hierarchy validation: dependency layer must be in allowedAncestors
-                if (!allowedAncestors.has(providedValue.layerId)) {
-                    const depLayerName = this.layers.get(providedValue.layerId)?.name || providedValue.layerId;
-                    const targetLayerName = this.layers.get(targetLayerId)?.name || targetLayerId;
-                    throw new Error(`Consistency Check Failed: Dependency '${depKey}' (in layer '${depLayerName}') is not in layer '${targetLayerName}' or any of its lower ancestor layers.`);
-                }
+
+            if (!providedValue) {
+                throw new Error(`Consistency Check Failed: Missing dependency '${depKey}' for artefact of sort '${sortName}'.`);
+            }
+            if (providedValue.sortName !== expectedSortName) {
+                throw new Error(`Consistency Check Failed: Dependency '${depKey}' expected sort '${expectedSortName}', but got '${providedValue.sortName}'.`);
+            }
+            // Hierarchy validation: dependency layer must be in allowedAncestors
+            if (!allowedAncestors.has(providedValue.layerId)) {
+                const depLayerName = this.layers.get(providedValue.layerId)?.name || providedValue.layerId;
+                const targetLayerName = this.layers.get(targetLayerId)?.name || targetLayerId;
+                throw new Error(`Consistency Check Failed: Dependency '${depKey}' (in layer '${depLayerName}') is not in layer '${targetLayerName}' or any of its lower ancestor layers.`);
             }
         }
 
@@ -972,58 +840,10 @@ export class Drawing {
             }
         }
 
-        // 3. Normalize flag references ({ layerIds }) into booleans + flagLayers entries
-        const normalizedDeps: Record<string, Artefact | boolean> = {};
-        const flagLayers: Record<string, string[]> = {};
-        for (const [depKey, providedValue] of Object.entries(dependencies)) {
-            const expectedSortName = sortDef.dependencies[depKey];
-            if (expectedSortName === "flag" && this.isFlagRef(providedValue)) {
-                const layerIds = this.flagRefLayerIds(providedValue);
-                for (const layerId of layerIds) {
-                    this.validateFlagLayer(layerId, targetLayerId, depKey);
-                }
-                normalizedDeps[depKey] = true;
-                const layers = Array.from(new Set(layerIds));
-                if (layers.length > 0) {
-                    flagLayers[depKey] = layers;
-                }
-            } else {
-                normalizedDeps[depKey] = providedValue as Artefact | boolean;
-            }
-        }
-
-        const artefact = new Artefact(sortName, normalizedDeps, data, sortDef.drawFunction, targetLayerId);
-        artefact.flagLayers = flagLayers;
+        const artefact = new Artefact(sortName, { ...dependencies }, data, sortDef.drawFunction, targetLayerId);
         this.artefacts.push(artefact);
         
         return artefact;
-    }
-
-    private isFlagRef(value: unknown): value is FlagRef {
-        if (typeof value !== "object" || value === null) return false;
-        const v = value as { __flag?: unknown; layerId?: unknown; layerIds?: unknown };
-        if (v.__flag !== true) return false;
-        if (typeof v.layerId === "string") return true;
-        if (Array.isArray(v.layerIds) && v.layerIds.every(l => typeof l === "string")) return true;
-        return false;
-    }
-
-    private flagRefLayerIds(value: FlagRef): string[] {
-        if ("layerIds" in value) {
-            return value.layerIds;
-        }
-        return [value.layerId];
-    }
-
-    private validateFlagLayer(flagLayerId: string, artefactLayerId: string, flagKey: string): void {
-        if (!this.layers.has(flagLayerId)) {
-            throw new Error(`Consistency Check Failed: Flag '${flagKey}' leaves from layer '${flagLayerId}', which does not exist.`);
-        }
-        if (!this.getDescendants(artefactLayerId).has(flagLayerId)) {
-            const artefactLayerName = this.layers.get(artefactLayerId)?.name || artefactLayerId;
-            const flagLayerName = this.layers.get(flagLayerId)?.name || flagLayerId;
-            throw new Error(`Consistency Check Failed: Flag '${flagKey}' leaves from layer '${flagLayerName}', which is not '${artefactLayerName}' or any of its descendant layers.`);
-        }
     }
 
     draw(context: D3Context): void {
@@ -1083,7 +903,7 @@ export class Drawing {
             const depEntries = Object.entries(sortDef.dependencies);
             if (depEntries.length !== 1) continue;
             const depSortName = depEntries[0][1];
-            if (depSortName === "flag" || !this.sortStore.getSort(depSortName)) continue;
+            if (!this.sortStore.getSort(depSortName)) continue;
 
             singleDepSort.set(sortDef.name, depSortName);
             let list = fieldsFor.get(depSortName);
@@ -1103,7 +923,6 @@ export class Drawing {
             const depValues = Object.values(art.dependencies);
             if (depValues.length !== 1) continue;
             const depArtefact = depValues[0];
-            if (typeof depArtefact === "boolean") continue;
 
             let set = present.get(depArtefact);
             if (!set) {
@@ -1144,7 +963,7 @@ export class Drawing {
             if (eq instanceof EqualityArtefact) {
                 eq.setChildren(remaining);
             } else {
-                const newDeps: Record<string, Artefact | boolean> = {};
+                const newDeps: Record<string, Artefact> = {};
                 remaining.forEach((child, idx) => {
                     newDeps[`${idx}`] = child;
                 });
@@ -1155,25 +974,7 @@ export class Drawing {
 
     private isFocused(artefact: Artefact): boolean {
         if (this.focusedLayerId === null) return true;
-        if (artefact.layerId === this.focusedLayerId) return true;
-        for (const flagLayer of artefact.getEffectiveFlagLayers()) {
-            if (flagLayer === this.focusedLayerId) return true;
-        }
-        return false;
-    }
-
-    public flagsMatch(a1: Artefact, a2: Artefact, flagKey: string): boolean {
-        const dep1 = a1.dependencies[flagKey];
-        const dep2 = a2.dependencies[flagKey];
-        const set1 = dep1 === true;
-        const set2 = dep2 === true;
-        if (set1 !== set2) return false;
-        if (!set1) return true;
-        const layers1 = a1.getFlagLayers(flagKey);
-        const layers2 = a2.getFlagLayers(flagKey);
-        if (layers1.length !== layers2.length) return false;
-        const set = new Set(layers1);
-        return layers2.every(layer => set.has(layer));
+        return artefact.layerId === this.focusedLayerId;
     }
 
     public areDependenciesEqual(a1: Artefact, a2: Artefact): boolean {
@@ -1193,9 +994,6 @@ export class Drawing {
                 return false;
             }
             if (a1.dependencies[k] !== a2.dependencies[k]) {
-                return false;
-            }
-            if (a1.dependencies[k] === true && !this.flagsMatch(a1, a2, k)) {
                 return false;
             }
         }
@@ -1273,7 +1071,7 @@ export class Drawing {
                 if (art instanceof EqualityArtefact) {
                     art.setChildren(uniqueChildren);
                 } else {
-                    const newDeps: Record<string, Artefact | boolean> = {};
+                    const newDeps: Record<string, Artefact> = {};
                     uniqueChildren.forEach((child, idx) => {
                         newDeps[`${idx}`] = child;
                     });
@@ -1321,9 +1119,8 @@ export interface ArtefactData {
     id: string;
     sortName: string;
     layerId: string;
-    dependencies: Record<string, string | boolean>;
+    dependencies: Record<string, string>;
     data: Record<string, any>;
-    flagLayers?: Record<string, string[]>;
 }
 
 export interface SavedDrawing {
@@ -1397,11 +1194,9 @@ export class DrawingStore {
         }));
 
         const artefactsData: ArtefactData[] = artefacts.map(art => {
-            const serializedDeps: Record<string, string | boolean> = {};
+            const serializedDeps: Record<string, string> = {};
             for (const [key, val] of Object.entries(art.dependencies)) {
-                if (typeof val === "boolean") {
-                    serializedDeps[key] = val;
-                } else if (val && artefactToId.has(val)) {
+                if (val && artefactToId.has(val)) {
                     serializedDeps[key] = artefactToId.get(val)!;
                 }
             }
@@ -1411,8 +1206,7 @@ export class DrawingStore {
                 sortName: art.sortName,
                 layerId: art.layerId,
                 dependencies: serializedDeps,
-                data: JSON.parse(JSON.stringify(art.data)),
-                flagLayers: Object.keys(art.flagLayers).length > 0 ? { ...art.flagLayers } : undefined
+                data: JSON.parse(JSON.stringify(art.data))
             };
         });
 
@@ -1484,28 +1278,18 @@ export class DrawingStore {
                 const artData = remainingArtefacts[i];
 
                 let ready = true;
-                const resolvedDeps: Record<string, Artefact | boolean | FlagRef> = {};
+                const resolvedDeps: Record<string, Artefact> = {};
 
                 for (const [depKey, depVal] of Object.entries(artData.dependencies)) {
-                    if (typeof depVal === "boolean") {
-                        resolvedDeps[depKey] = depVal;
-                    } else if (typeof depVal === "string") {
-                        if (createdArtefacts.has(depVal)) {
-                            resolvedDeps[depKey] = createdArtefacts.get(depVal)!;
-                        } else {
-                            ready = false;
-                            break;
-                        }
+                    if (createdArtefacts.has(depVal)) {
+                        resolvedDeps[depKey] = createdArtefacts.get(depVal)!;
+                    } else {
+                        ready = false;
+                        break;
                     }
                 }
 
                 if (ready) {
-                    for (const [flagKey, flagLayer] of Object.entries(artData.flagLayers ?? {})) {
-                        if (resolvedDeps[flagKey] === true) {
-                            const layerIds = Array.isArray(flagLayer) ? flagLayer : [flagLayer];
-                            resolvedDeps[flagKey] = { __flag: true, layerIds };
-                        }
-                    }
                     const newArt = drawing.newArtefact(
                         artData.sortName,
                         resolvedDeps,
@@ -1593,18 +1377,6 @@ export class DrawingStore {
         for (const art of p.artefacts) {
             if (!art || typeof art.id !== "string" || typeof art.sortName !== "string" || typeof art.layerId !== "string" || !art.dependencies || typeof art.dependencies !== "object" || !art.data || typeof art.data !== "object") {
                 throw new Error("Consistency Check Failed: Invalid artefact structure in imported drawing.");
-            }
-            if (art.flagLayers !== undefined) {
-                if (typeof art.flagLayers !== "object" || art.flagLayers === null || Array.isArray(art.flagLayers)) {
-                    throw new Error("Consistency Check Failed: Invalid flagLayers structure in imported drawing.");
-                }
-                for (const val of Object.values(art.flagLayers as Record<string, unknown>)) {
-                    const valid = typeof val === "string" ||
-                        (Array.isArray(val) && val.every(l => typeof l === "string"));
-                    if (!valid) {
-                        throw new Error("Consistency Check Failed: Invalid flag layer value in imported drawing.");
-                    }
-                }
             }
         }
 
@@ -1733,8 +1505,7 @@ function extractEqualityConstraints(rule: Drawing): Array<{ children: Artefact[]
 function findRuleApplicationsInternal(
     host: Drawing,
     patternArts: Artefact[],
-    equalityConstraints: Array<{ children: Artefact[] }>,
-    rule: Drawing
+    equalityConstraints: Array<{ children: Artefact[] }>
 ): RuleApplication[] {
     const results: RuleApplication[] = [];
 
@@ -1749,9 +1520,6 @@ function findRuleApplicationsInternal(
     const rootLayerIds = host.getAllLayers()
         .filter(l => l.parentId === null)
         .map(l => l.id);
-    const ruleRootLayerIds = new Set(rule.getAllLayers()
-        .filter(l => l.parentId === null)
-        .map(l => l.id));
     const hostCandidates = host.getArtefacts().filter(a => rootLayerIds.includes(a.layerId));
 
     const ordered = topologicallyOrderPattern(patternArts);
@@ -1784,10 +1552,9 @@ function findRuleApplicationsInternal(
             if (checkEqualityConstraints()) {
                 const hostArtefacts = new Set<Artefact>(used);
                 for (const [a, cand] of assignment) {
-                    for (const [k, dep] of Object.entries(a.dependencies)) {
-                        if (typeof dep === "boolean") continue;
+                    for (const [k] of Object.entries(a.dependencies)) {
                         const hostDep = cand.dependencies[k];
-                        if (typeof hostDep !== "boolean" && hostDep !== undefined) {
+                        if (hostDep !== undefined) {
                             hostArtefacts.add(hostDep);
                         }
                     }
@@ -1803,36 +1570,14 @@ function findRuleApplicationsInternal(
 
             let ok = true;
             for (const [k, dep] of Object.entries(a.dependencies)) {
-                if (typeof dep === "boolean") {
-                    if (dep === true) {
-                        // Flags leaving from a non-root layer belong to the rule's
-                        // child-layer structure, not the root pattern: they must not
-                        // constrain matching. Only root-layer flag layers constrain.
-                        const rootFlagLayers = a.getFlagLayers(k).filter(l => ruleRootLayerIds.has(l));
-                        if (rootFlagLayers.length === 0) {
-                            continue;
-                        }
-                        if (cand.dependencies[k] !== true) {
-                            ok = false;
-                            break;
-                        }
-                        // A flag leaves from the rule root layer: require the same
-                        // relative depth between the flag's layer and the artefact's layer.
-                        const patternRelative = rule.getLayerDepth(rootFlagLayers[0]) - rule.getLayerDepth(a.layerId);
-                        const hostRelative = cand.getFlagLayers(k).map(l => host.getLayerDepth(l) - host.getLayerDepth(cand.layerId));
-                        if (!hostRelative.includes(patternRelative)) {
-                            ok = false;
-                            break;
-                        }
-                    }
-                } else if (patternSet.has(dep)) {
+                if (patternSet.has(dep)) {
                     const img = assignment.get(dep);
                     if (img === undefined) {
                         ok = false;
                         break;
                     }
                     const hostDep = cand.dependencies[k];
-                    if (typeof hostDep === "boolean" || hostDep === undefined) {
+                    if (hostDep === undefined) {
                         ok = false;
                         break;
                     }
@@ -1895,7 +1640,7 @@ function findRootRuleApplications(rule: Drawing, host: Drawing): RuleApplication
     }
     const root = rootLayers[0];
     const rootArts = rule.getArtefacts().filter(a => a.sortName !== "Equality" && a.layerId === root.id);
-    return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule), rule);
+    return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule));
 }
 
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
@@ -1947,7 +1692,7 @@ function resolveHostRootId(
     const anchorLayerIds = new Set<string>();
     for (const a of ruleArts) {
         for (const dep of Object.values(a.dependencies)) {
-            if (typeof dep !== "boolean" && dep.layerId === ruleRoot.id && match.has(dep)) {
+            if (dep.layerId === ruleRoot.id && match.has(dep)) {
                 anchorLayerIds.add(match.get(dep)!.layerId);
             }
         }
@@ -1964,7 +1709,7 @@ function resolveHostRootId(
 function artefactChildren(art: Artefact): Artefact[] {
     return art instanceof EqualityArtefact
         ? art.children
-        : Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== "boolean");
+        : Object.values(art.dependencies);
 }
 
 function topologicallyOrderPattern(pattern: Artefact[]): Artefact[] | null {
@@ -1975,7 +1720,7 @@ function topologicallyOrderPattern(pattern: Artefact[]): Artefact[] | null {
         const next = pattern.find(a =>
             !orderedSet.has(a) &&
             Object.values(a.dependencies).every(dep =>
-                typeof dep === "boolean" || !patternSet.has(dep) || orderedSet.has(dep)
+                !patternSet.has(dep) || orderedSet.has(dep)
             )
         );
         if (!next) break;
@@ -1985,37 +1730,7 @@ function topologicallyOrderPattern(pattern: Artefact[]): Artefact[] | null {
     return orderedSet.size === pattern.length ? ordered : null;
 }
 
-function remapFlagLayers(source: Artefact, target: Artefact, targetDrawing: Drawing, layerMap: Record<string, string>): void {
-    for (const [flagKey, flagLayerArr] of Object.entries(source.flagLayers)) {
-        const mapped = flagLayerArr.map(flagLayer => layerMap[flagLayer] ?? flagLayer);
-        const kept = Array.from(new Set(mapped)).filter(flagLayer =>
-            flagLayer !== target.layerId &&
-            !!targetDrawing.getLayer(flagLayer) &&
-            targetDrawing.getDescendants(target.layerId).has(flagLayer)
-        );
-        if (kept.length > 0) {
-            target.flagLayers[flagKey] = kept;
-        }
-    }
-}
-
-function computeConclusionFlags(rule: Drawing, ruleRoot: Layer, childLayer: Layer, match: Map<Artefact, Artefact>): Map<Artefact, Set<string>> {
-    const result = new Map<Artefact, Set<string>>();
-    for (const a of rule.getArtefacts()) {
-        if (a.layerId !== ruleRoot.id) continue;
-        for (const [key, dep] of Object.entries(a.dependencies)) {
-            if (dep !== true) continue;
-            if (!a.getFlagLayers(key).includes(childLayer.id)) continue;
-            const img = match.get(a);
-            if (!img) continue;
-            if (!result.has(img)) result.set(img, new Set());
-            result.get(img)!.add(key);
-        }
-    }
-    return result;
-}
-
-function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): { artefacts: Artefact[]; conclusionFlags: Map<Artefact, Set<string>>; created: Map<Artefact, Artefact> } {
+function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleApplication, childLayer: Layer): { artefacts: Artefact[]; created: Map<Artefact, Artefact> } {
     const layers = rule.getAllLayers();
     const rootLayers = layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {
@@ -2035,22 +1750,6 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
 
     const hostRootId = resolveHostRootId(ruleRoot, childArts, match, hostRoots);
 
-    // Flags set on root-layer rule artefacts that leave from the conclusion layer
-    // are added to the matched host artefacts in the host root layer.
-    const conclusionFlags = computeConclusionFlags(rule, ruleRoot, childLayer, match);
-    for (const [img, keys] of conclusionFlags) {
-        for (const key of keys) {
-            img.dependencies[key] = true;
-            const current = img.getFlagLayers(key);
-            const next = Array.from(new Set([...current, hostRootId]));
-            if (next.length > 0) {
-                img.flagLayers[key] = next;
-            } else {
-                delete img.flagLayers[key];
-            }
-        }
-    }
-
     const created = new Map<Artefact, Artefact>();
     const result: Artefact[] = [];
     const remaining = [...childArts];
@@ -2058,7 +1757,6 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
     while (remaining.length > 0) {
         const idx = remaining.findIndex(a =>
             Object.values(a.dependencies).every(dep =>
-                typeof dep === "boolean" ||
                 (dep.layerId === ruleRoot.id && match.has(dep)) ||
                 (dep.layerId === childLayer.id && created.has(dep))
             )
@@ -2066,7 +1764,6 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
         if (idx === -1) {
             const unresolved = remaining.find(a => {
                 for (const dep of Object.values(a.dependencies)) {
-                    if (typeof dep === "boolean") continue;
                     if (dep.layerId === ruleRoot.id && match.has(dep)) continue;
                     if (dep.layerId === childLayer.id && created.has(dep)) continue;
                     return true;
@@ -2078,11 +1775,9 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
         }
 
         const a = remaining.splice(idx, 1)[0];
-        const newDeps: Record<string, Artefact | boolean> = {};
+        const newDeps: Record<string, Artefact> = {};
         for (const [key, dep] of Object.entries(a.dependencies)) {
-            if (typeof dep === "boolean") {
-                newDeps[key] = dep;
-            } else if (dep.layerId === ruleRoot.id) {
+            if (dep.layerId === ruleRoot.id) {
                 const img = match.get(dep);
                 if (!img) {
                     throw new Error(`Consistency Check Failed: No match found for rule artefact '${dep.data.label || dep.sortName}'.`);
@@ -2098,10 +1793,6 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
         }
 
         const newArt = host.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), hostRootId);
-        const layerMap: Record<string, string> = {};
-        layerMap[ruleRoot.id] = hostRootId;
-        layerMap[childLayer.id] = hostRootId;
-        remapFlagLayers(a, newArt, host, layerMap);
         created.set(a, newArt);
         result.push(newArt);
     }
@@ -2136,7 +1827,7 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
         }
     }
 
-    return { artefacts: result, conclusionFlags, created };
+    return { artefacts: result, created };
 }
 
 export function applyFirstOrderRule(rule: Drawing, host: Drawing, application: RuleApplication): { artefacts: Artefact[]; created: Map<Artefact, Artefact> } {
@@ -2212,7 +1903,7 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
     const premiseLayers = childLayers.filter(child => child !== conclusion);
 
     // Step 1: apply the rule as if it were first-order, ignoring the other child layers of depth 2
-    const { artefacts: hostArtefacts, conclusionFlags, created } = applyRuleConclusion(rule, host, application, conclusion);
+    const { artefacts: hostArtefacts, created } = applyRuleConclusion(rule, host, application, conclusion);
     // The conclusion is merged into the host root; it must NOT be carried over
     // into the derived drawings created for each premise layer.
     const conclusionCreated = new Set<Artefact>(hostArtefacts);
@@ -2244,35 +1935,22 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
         while (remainingHost.length > 0) {
             const idx = remainingHost.findIndex(a =>
                 Object.values(a.dependencies).every(dep =>
-                    typeof dep === "boolean" ||
-                    (typeof dep !== "boolean" && (dep.layerId !== hostRootId || origToCopy.has(dep)))
+                    dep.layerId !== hostRootId || origToCopy.has(dep)
                 )
             );
             if (idx === -1) {
                 throw new Error(`Consistency Check Failed: Cannot resolve dependencies when copying host root artefacts for derived rule '${premise.name}'.`);
             }
             const a = remainingHost.splice(idx, 1)[0];
-            const excludedFlags = conclusionFlags.get(a);
-            const copiedDeps: Record<string, Artefact | boolean> = {};
+            const copiedDeps: Record<string, Artefact> = {};
             for (const [key, dep] of Object.entries(a.dependencies)) {
-                if (excludedFlags?.has(key)) continue;
-                if (typeof dep === "boolean") {
-                    copiedDeps[key] = dep;
-                } else {
-                    const copy = origToCopy.get(dep);
-                    if (!copy) {
-                        throw new Error(`Consistency Check Failed: No copy created for host root artefact '${dep.data.label || dep.sortName}'.`);
-                    }
-                    copiedDeps[key] = copy;
+                const copy = origToCopy.get(dep);
+                if (!copy) {
+                    throw new Error(`Consistency Check Failed: No copy created for host root artefact '${dep.data.label || dep.sortName}'.`);
                 }
+                copiedDeps[key] = copy;
             }
             const copy = derived.newArtefact(a.sortName, copiedDeps, JSON.parse(JSON.stringify(a.data)), derivedRootId);
-            const copyLayerMap: Record<string, string> = {};
-            copyLayerMap[hostRootId] = derivedRootId;
-            remapFlagLayers(a, copy, derived, copyLayerMap);
-            if (excludedFlags) {
-                for (const key of excludedFlags) delete copy.flagLayers[key];
-            }
             origToCopy.set(a, copy);
         }
 
@@ -2294,7 +1972,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
         while (remainingA.length > 0) {
             const idx = remainingA.findIndex(a =>
                 Object.values(a.dependencies).every(dep =>
-                    typeof dep === "boolean" ||
                     (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) ||
                     (dep.layerId === premise.id && aCreated.has(dep))
                 )
@@ -2302,7 +1979,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             if (idx === -1) {
                 const unresolved = remainingA.find(a => {
                     for (const dep of Object.values(a.dependencies)) {
-                        if (typeof dep === "boolean") continue;
                         if (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) continue;
                         if (dep.layerId === premise.id && aCreated.has(dep)) continue;
                         return true;
@@ -2314,11 +1990,9 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             }
 
             const a = remainingA.splice(idx, 1)[0];
-            const newDeps: Record<string, Artefact | boolean> = {};
+            const newDeps: Record<string, Artefact> = {};
             for (const [key, dep] of Object.entries(a.dependencies)) {
-                if (typeof dep === "boolean") {
-                    newDeps[key] = dep;
-                } else if (dep.layerId === ruleRoot.id) {
+                if (dep.layerId === ruleRoot.id) {
                     const img = match.get(dep);
                     const copy = img ? origToCopy.get(img) : undefined;
                     if (!img || !copy) {
@@ -2334,10 +2008,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 }
             }
             const newArt = derived.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), derivedRootId);
-            const premiseLayerMap: Record<string, string> = {};
-            premiseLayerMap[ruleRoot.id] = derivedRootId;
-            premiseLayerMap[premise.id] = derivedRootId;
-            remapFlagLayers(a, newArt, derived, premiseLayerMap);
             aCreated.set(a, newArt);
         }
 
@@ -2383,7 +2053,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
         while (remainingB.length > 0) {
             const idx = remainingB.findIndex(a =>
                 Object.values(a.dependencies).every(dep =>
-                    typeof dep === "boolean" ||
                     (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) ||
                     (dep.layerId === premise.id && aCreated.has(dep)) ||
                     (dep.layerId === childOfPremise.id && bCreated.has(dep))
@@ -2392,7 +2061,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             if (idx === -1) {
                 const unresolved = remainingB.find(a => {
                     for (const dep of Object.values(a.dependencies)) {
-                        if (typeof dep === "boolean") continue;
                         if (dep.layerId === ruleRoot.id && match.has(dep) && origToCopy.has(match.get(dep)!)) continue;
                         if (dep.layerId === premise.id && aCreated.has(dep)) continue;
                         if (dep.layerId === childOfPremise.id && bCreated.has(dep)) continue;
@@ -2405,11 +2073,9 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
             }
 
             const a = remainingB.splice(idx, 1)[0];
-            const newDeps: Record<string, Artefact | boolean> = {};
+            const newDeps: Record<string, Artefact> = {};
             for (const [key, dep] of Object.entries(a.dependencies)) {
-                if (typeof dep === "boolean") {
-                    newDeps[key] = dep;
-                } else if (dep.layerId === ruleRoot.id) {
+                if (dep.layerId === ruleRoot.id) {
                     const img = match.get(dep);
                     const copy = img ? origToCopy.get(img) : undefined;
                     if (!img || !copy) {
@@ -2431,10 +2097,6 @@ export function applySecondOrderRule(rule: Drawing, host: Drawing, application: 
                 }
             }
             const newArt = derived.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), childOfPremise.id);
-            const bLayerMap: Record<string, string> = {};
-            bLayerMap[ruleRoot.id] = derivedRootId;
-            bLayerMap[premise.id] = derivedRootId;
-            remapFlagLayers(a, newArt, derived, bLayerMap);
             bCreated.set(a, newArt);
         }
 

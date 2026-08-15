@@ -13,8 +13,8 @@ import {
     makeEdge,
     buildComposableEdgesRule,
     buildComposableHost,
-    buildFlagInChildLayerRule,
-    buildFlagInRootRule,
+    buildIsMonoInChildLayerRule,
+    buildIsMonoInRootRule,
     buildChildEqRule,
     buildSecondOrderRule,
     buildTrianglePairHost,
@@ -29,15 +29,15 @@ describe('first-order rule matching', () => {
         expect(apps.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('matches a rule whose flag leaves from a child layer without requiring the flag in the host', () => {
-        const rule = buildFlagInChildLayerRule();
+    it('matches a rule whose isMono artefact leaves from a child layer without requiring isMono in the host', () => {
+        const rule = buildIsMonoInChildLayerRule();
         const { host } = buildComposableHost();
         const apps = findFirstOrderRuleApplications(rule, host);
         expect(apps.length).toBe(1);
     });
 
-    it('requires a rule flag leaving from the root layer to be present in the host', () => {
-        const rule = buildFlagInRootRule();
+    it('requires an isMono artefact in the rule root layer to be present in the host', () => {
+        const rule = buildIsMonoInRootRule();
         const { host } = buildComposableHost();
         const apps = findFirstOrderRuleApplications(rule, host);
         expect(apps.length).toBe(0);
@@ -45,58 +45,45 @@ describe('first-order rule matching', () => {
 });
 
 describe('applying first-order rules', () => {
-    it('adds the conclusion-layer flag to the matched host root artefact', () => {
-        const rule = buildFlagInChildLayerRule();
+    it('adds the conclusion-layer isMono artefact to the matched host root artefact', () => {
+        const rule = buildIsMonoInChildLayerRule();
         const { host } = buildComposableHost();
         const apps = findFirstOrderRuleApplications(rule, host);
         expect(apps.length).toBe(1);
 
         applyFirstOrderRule(rule, host, apps[0]);
 
-        const monoEdges = host.getArtefacts().filter(a => a.dependencies['mono'] === true);
-        expect(monoEdges.length).toBe(1);
-        expect(monoEdges[0].data.label).toBe('he2');
-        expect(monoEdges[0].getFlagLayer('mono')).toBe('root');
+        const monoArtefacts = host.getArtefacts().filter(a => a.sortName === 'isMono');
+        expect(monoArtefacts.length).toBe(1);
+        expect(monoArtefacts[0].layerId).toBe('root');
+        const arrow = monoArtefacts[0].dependencies['arrow'];
+        expect(arrow).toBeDefined();
+        expect(arrow.data.label).toBe('he2');
     });
 
-    it('unions the conclusion-layer flag into the host root layer while keeping existing flag layers', () => {
-        const rule = buildFlagInChildLayerRule();
+    it('adds an isMono artefact in the root while keeping an existing isMono in a child layer', () => {
+        const rule = buildIsMonoInChildLayerRule();
         const host = makeDrawing();
         const omv0 = makeVertex(host, 'omv0');
         const omv1 = makeVertex(host, 'omv1');
         const omv2 = makeVertex(host, 'omv2');
         makeEdge(host, 'ome1', omv0, omv1);
+        const ome2 = host.newArtefact('Edge', { source: omv1, target: omv2 }, { width: 2, bend: 0, label: 'ome2' }, 'root');
         host.addLayer('mono-layer', 'Mono Layer', 'root');
-        host.newArtefact('Edge', { source: omv1, target: omv2, mono: { __flag: true, layerId: 'mono-layer' } }, { width: 2, bend: 0, label: 'ome2' }, 'root');
+        host.newArtefact('isMono', { arrow: ome2 }, {}, 'mono-layer');
 
         const apps = findFirstOrderRuleApplications(rule, host);
         expect(apps.length).toBe(1);
         applyFirstOrderRule(rule, host, apps[0]);
 
-        const monoEdges = host.getArtefacts().filter(a => a.dependencies['mono'] === true);
-        expect(monoEdges.length).toBe(1);
-        expect(monoEdges[0].data.label).toBe('ome2');
-        expect(monoEdges[0].getFlagLayers('mono')).toEqual(expect.arrayContaining(['root', 'mono-layer']));
-    });
-
-    it('matches and applies a rule whose flag is established in multiple layers', () => {
-        const rule = buildFlagInChildLayerRule();
-        const host = makeDrawing();
-        const mv0 = makeVertex(host, 'mv0');
-        const mv1 = makeVertex(host, 'mv1');
-        const mv2 = makeVertex(host, 'mv2');
-        makeEdge(host, 'me1', mv0, mv1);
-        host.addLayer('extra-layer', 'Extra Layer', 'root');
-        host.addLayer('other-layer', 'Other Layer', 'root');
-        host.newArtefact('Edge', { source: mv1, target: mv2, mono: { __flag: true, layerIds: ['extra-layer', 'other-layer'] } }, { width: 2, bend: 0, label: 'me2' }, 'root');
-
-        const apps = findFirstOrderRuleApplications(rule, host);
-        expect(apps.length).toBe(1);
-        applyFirstOrderRule(rule, host, apps[0]);
-
-        const monoEdges = host.getArtefacts().filter(a => a.dependencies['mono'] === true);
-        expect(monoEdges.length).toBe(1);
-        expect(monoEdges[0].getFlagLayers('mono')).toEqual(expect.arrayContaining(['extra-layer', 'other-layer', 'root']));
+        const monoArtefacts = host.getArtefacts().filter(a => a.sortName === 'isMono');
+        expect(monoArtefacts.length).toBe(2);
+        const rootMonos = monoArtefacts.filter(a => a.layerId === 'root');
+        const childMonos = monoArtefacts.filter(a => a.layerId === 'mono-layer');
+        expect(rootMonos.length).toBe(1);
+        expect(childMonos.length).toBe(1);
+        const arrow = rootMonos[0].dependencies['arrow'];
+        expect(arrow.data.label).toBe('ome2');
     });
 
     it('adds conclusion equalities that are not already provable in the host', () => {
@@ -151,10 +138,12 @@ describe('second-order rules', () => {
         expect(dr.drawing.getArtefacts().some(a => a.data.label === 'sh')).toBe(false);
         expect(host.getArtefacts().some(a => a.data.label === 'sh' && a.layerId === 'root')).toBe(true);
 
-        const hostMonoEdges = host.getArtefacts().filter(a => a.dependencies['mono'] === true);
-        expect(hostMonoEdges.length).toBe(1);
-        expect(hostMonoEdges[0].getFlagLayer('mono')).toBe('root');
-        expect(dr.drawing.getArtefacts().filter(a => a.dependencies['mono'] === true).length).toBe(0);
+        const hostMonoArtefacts = host.getArtefacts().filter(a => a.sortName === 'isMono');
+        expect(hostMonoArtefacts.length).toBe(1);
+        expect(hostMonoArtefacts[0].layerId).toBe('root');
+        const arrow = hostMonoArtefacts[0].dependencies['arrow'];
+        expect(arrow.data.label).toBe('he1');
+        expect(dr.drawing.getArtefacts().filter(a => a.sortName === 'isMono').length).toBe(0);
     });
 });
 

@@ -16,7 +16,7 @@ import {
 } from '../index';
 import { exportDrawingsToRocq } from '../rocq_export';
 import { RocqRecorder } from '../rocq_recording';
-import { newSortStore, makeVertex, makeEdge } from './helpers';
+import { newSortStore, makeVertex, makeEdge, buildIsMonoOnlyConclusionRule } from './helpers';
 
 const rocqAvailable = ((): boolean => {
     try {
@@ -130,21 +130,14 @@ function buildProvableChild(sortStore: SortStore): Drawing {
     return host;
 }
 
-function buildFlagOnlyConclusion(sortStore: SortStore): BuiltScenario {
+function buildIsMonoOnlyConclusion(sortStore: SortStore): BuiltScenario {
     const host = new Drawing(sortStore);
     const hv0 = makeVertex(host, 'hv0');
     const hv1 = makeVertex(host, 'hv1');
     const hv2 = makeVertex(host, 'hv2');
     makeEdge(host, 'he1', hv0, hv1);
     makeEdge(host, 'he2', hv1, hv2);
-    const rule = new Drawing(sortStore);
-    const fv0 = makeVertex(rule, 'fv0');
-    const fv1 = makeVertex(rule, 'fv1');
-    const fv2 = makeVertex(rule, 'fv2');
-    makeEdge(rule, 'fe1', fv0, fv1);
-    rule.addLayer('flag-conclusion', 'Flag Conclusion', 'root');
-    rule.newArtefact('Edge', { source: fv1, target: fv2, mono: { __flag: true, layerId: 'flag-conclusion' } }, { width: 2, bend: 0, label: 'fe2' }, 'root');
-    rule.setIsRule(true);
+    const rule = buildIsMonoOnlyConclusionRule();
     const apps = findFirstOrderRuleApplications(rule, host);
     if (apps.length === 0) {
         throw new Error('FlagOnlyRule produced no applications');
@@ -176,7 +169,7 @@ describe.skipIf(!rocqAvailable)('rocq export compiles', () => {
         { name: 'single_eq_conclusion', build: buildSingleEqConclusion },
         { name: 'multi_eq_conclusion', build: buildMultiEqConclusion },
         { name: 'second_order', build: buildSecondOrder },
-        { name: 'flag_only_conclusion', build: buildFlagOnlyConclusion }
+        { name: 'isMono_only_conclusion', build: buildIsMonoOnlyConclusion }
     ])('compiles $name', ({ name, build }) => {
         const sortStore = newSortStore();
         compile(name, recordScenario(sortStore, build(sortStore)));
@@ -206,7 +199,8 @@ describe.skipIf(!rocqAvailable)('rocq export compiles', () => {
         const mb = makeVertex(host, 'b');
         host.addLayer('child', 'Child Layer', 'root');
         makeEdge(host, 'g', ma, mb, 'child');
-        host.newArtefact('Edge', { source: ma, target: mb, mono: { __flag: true, layerId: 'root' } }, { width: 2, bend: 0, label: 'mf' }, 'root');
+        const mf = host.newArtefact('Edge', { source: ma, target: mb }, { width: 2, bend: 0, label: 'mf' }, 'root');
+        host.newArtefact('isMono', { arrow: mf }, {}, 'root');
         host.newEqualityArtefact([ma, mb], 'root');
         store.saveDrawing('Main', host);
 
@@ -233,7 +227,8 @@ describe.skipIf(!rocqAvailable)('rocq export compiles', () => {
         const monoRule = new Drawing(sortStore);
         const mx = makeVertex(monoRule, 'x');
         const my = makeVertex(monoRule, 'y');
-        monoRule.newArtefact('Edge', { source: mx, target: my, mono: { __flag: true, layerId: 'root' } }, { width: 2, bend: 0, label: 'f' }, 'root');
+        const mfRule = monoRule.newArtefact('Edge', { source: mx, target: my }, { width: 2, bend: 0, label: 'f' }, 'root');
+        monoRule.newArtefact('isMono', { arrow: mfRule }, {}, 'root');
         monoRule.addLayer('conclusion', 'Conclusion Layer', 'root');
         makeEdge(monoRule, 'g', mx, my, 'conclusion');
         monoRule.setIsRule(true);

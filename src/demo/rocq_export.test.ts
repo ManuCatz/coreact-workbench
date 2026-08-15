@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { exportDrawingsToRocq } from '../rocq_export';
 import { RocqRecorder } from '../rocq_recording';
 import { Drawing, DrawingStore, findFirstOrderRuleApplications, applyFirstOrderRule, findSecondOrderRuleApplications, applySecondOrderRule } from '../index';
-import { newSortStore, makeVertex, makeEdge, makeDrawing, buildComposableHost, buildFlagInChildLayerRule, buildFlagOnlyConclusionRule, buildSecondOrderRule } from './helpers';
+import { newSortStore, makeVertex, makeEdge, makeDrawing, buildComposableHost, buildIsMonoInChildLayerRule, buildIsMonoOnlyConclusionRule, buildSecondOrderRule } from './helpers';
 
 describe('rocq export', () => {
     it('exports sorts and a sigma notation preamble without records or modules', () => {
@@ -189,7 +189,8 @@ describe('rocq export', () => {
         const hb = makeVertex(host, 'b');
         const hc = makeVertex(host, 'c');
         host.newEqualityArtefact([ha, hb], 'root');
-        host.newArtefact('Edge', { source: ha, target: hc, mono: { __flag: true, layerId: 'root' } }, { width: 2, bend: 0, label: 'mw' }, 'root');
+        const hmw = host.newArtefact('Edge', { source: ha, target: hc }, { width: 2, bend: 0, label: 'mw' }, 'root');
+        host.newArtefact('isMono', { arrow: hmw }, {}, 'root');
         store.saveDrawing('MainDrawing', host);
 
         const rule = new Drawing(sortStore);
@@ -197,7 +198,8 @@ describe('rocq export', () => {
         const ry = makeVertex(rule, 'y');
         const rw = makeVertex(rule, 'w');
         rule.newEqualityArtefact([rx, ry], 'root');
-        rule.newArtefact('Edge', { source: rx, target: rw, mono: { __flag: true, layerId: 'root' } }, { width: 2, bend: 0, label: 'mw' }, 'root');
+        const rmw = rule.newArtefact('Edge', { source: rx, target: rw }, { width: 2, bend: 0, label: 'mw' }, 'root');
+        rule.newArtefact('isMono', { arrow: rmw }, {}, 'root');
         rule.addLayer('conclusion', 'Conclusion', 'root');
         rule.newArtefact('Edge', { source: rx, target: ry }, { width: 2, bend: 0, label: 'f' }, 'conclusion');
         rule.setIsRule(true);
@@ -212,34 +214,34 @@ describe('rocq export', () => {
         recorder.recordProveSuccess(host, null, null, 'MainDrawing');
         const script = recorder.stop();
 
-        expect(script).toContain('@ArgOrderRule_rule a b c eq_refl mw mono_mw');
-        expect(script).not.toContain('@ArgOrderRule_rule a b c mw mono_mw eq_refl');
+        expect(script).toContain('@ArgOrderRule_rule a b c eq_refl mw isMono_2');
+        expect(script).not.toContain('@ArgOrderRule_rule a b c mw isMono_2 eq_refl');
     });
 
-    it('applies a first-order rule combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
+    it('applies a first-order rule combining an artefact and a conclusion-layer isMono, naming it from the host', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
         const host = buildComposableHost().host;
         store.saveDrawing('MainDrawing', host);
 
-        const rule = buildFlagInChildLayerRule();
-        store.saveDrawing('FlagInChildLayer', rule);
+        const rule = buildIsMonoInChildLayerRule();
+        store.saveDrawing('IsMonoInChildLayer', rule);
 
         const recorder = new RocqRecorder();
         recorder.start(host, 'MainDrawing', sortStore);
         const apps = findFirstOrderRuleApplications(rule, host);
         expect(apps.length).toBe(1);
         const created = applyFirstOrderRule(rule, host, apps[0]);
-        recorder.recordRuleApply(rule, 'FlagInChildLayer', apps[0], host, created, 'MainDrawing', sortStore);
+        recorder.recordRuleApply(rule, 'IsMonoInChildLayer', apps[0], host, created, 'MainDrawing', sortStore);
         const script = recorder.stop();
 
-        expect(script).toContain('@FlagInChildLayer_rule hv0 hv1 hv2 he1 he2');
-        expect(script).toContain('as fe3 mono_he2');
+        expect(script).toContain('@IsMonoInChildLayer_rule hv0 hv1 hv2 he1 he2');
+        expect(script).toContain('as fe3 isMono_2');
         expect(script).not.toContain('as ()');
     });
 
-    it('applies a second-order rule combining an artefact and a conclusion-layer flag, naming the flag from the host', () => {
+    it('applies a second-order rule combining an artefact and a conclusion-layer isMono, naming it from the host', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -259,11 +261,11 @@ describe('rocq export', () => {
 
         expect(script).toContain('Lemma MainDrawing___SecondOrderRule___Premise_A_rule :');
         expect(script).toContain('@SecondOrderRule_rule hv0 hv1 hv2 he1 he2 Hpremise1');
-        expect(script).toContain('as sh mono_he1');
+        expect(script).toContain('as sh isMono_2');
         expect(script).not.toContain('as ()');
     });
 
-    it('applies a rule whose conclusion is only a flag already present in a host child layer', () => {
+    it('applies a rule whose conclusion is only an isMono already present in a host child layer', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -273,10 +275,11 @@ describe('rocq export', () => {
         const hv2 = makeVertex(host, 'hv2');
         makeEdge(host, 'he1', hv0, hv1);
         host.addLayer('mono-layer', 'Mono Layer', 'root');
-        host.newArtefact('Edge', { source: hv1, target: hv2, mono: { __flag: true, layerId: 'mono-layer' } }, { width: 2, bend: 0, label: 'he2' }, 'root');
+        const he2 = host.newArtefact('Edge', { source: hv1, target: hv2 }, { width: 2, bend: 0, label: 'he2' }, 'root');
+        host.newArtefact('isMono', { arrow: he2 }, {}, 'mono-layer');
         store.saveDrawing('MainDrawing', host);
 
-        const rule = buildFlagOnlyConclusionRule();
+        const rule = buildIsMonoOnlyConclusionRule();
         store.saveDrawing('FlagOnlyRule', rule);
 
         const recorder = new RocqRecorder();
@@ -288,7 +291,9 @@ describe('rocq export', () => {
         const script = recorder.stop();
 
         expect(script).toContain('@FlagOnlyRule_rule hv0 hv1 hv2 he1 he2');
-        expect(script).toContain('as mono_he2');
+        // The host already has an isMono artefact (in mono-layer, named isMono_2),
+        // so the created conclusion binds as isMono_3.
+        expect(script).toContain('as isMono_3');
         expect(script).not.toContain('as ()');
     });
 
@@ -351,7 +356,7 @@ describe('rocq export', () => {
         expect(script).toContain('exact g.');
     });
 
-    it('records an exact proof for a child layer containing a flag established in the parent', () => {
+    it('records an exact proof for a child layer containing an isMono established in the parent', () => {
         const sortStore = newSortStore();
         const store = new DrawingStore();
 
@@ -364,9 +369,9 @@ describe('rocq export', () => {
         const ce = host.newArtefact('Edge', { source: ma, target: mb }, { width: 2, bend: 0, label: 'c' }, 'child');
         host.addEqualityArtefactUnchecked([me, ce], 'child');
 
-        // Flag established in root AND child
-        me.dependencies['mono'] = true;
-        me.flagLayers['mono'] = ['root', 'child'];
+        // isMono established in root AND child
+        host.newArtefact('isMono', { arrow: me }, {}, 'root');
+        host.newArtefact('isMono', { arrow: me }, {}, 'child');
         
         store.saveDrawing('MainDrawing', host);
 
@@ -378,8 +383,8 @@ describe('rocq export', () => {
         recorder.recordProveSuccess(host, 'child', result.match ?? null, 'MainDrawing');
         
         const script = recorder.stop();
-        // The proof witness should be a tuple with 'g' and the flag's proof term.
-        // It might be 'mono_g' depending on NameRegistry specifics, so we check for exact (...).
+        // The proof witness should be a tuple with 'g' and the isMono proof term.
+        // It might be 'isMono_2' depending on NameRegistry specifics, so we check for exact (...).
         expect(script).toContain('exact (');
     });
 

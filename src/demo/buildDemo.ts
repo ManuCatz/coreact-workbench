@@ -54,9 +54,10 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     const e0 = drawing.newArtefact('Edge', { source: v0, target: v1 }, { width: 4, bend: 0, label: 'e0' }, 'root');
 
     // Edges e1, e2 in Child Layer 1 (referencing Root Layer vertices v0, v1, v2)
-    // e1's mono flag leaves from layer-2 (a descendant of e1's layer), so it shows as active when layer-2 is focused
-    const e1 = drawing.newArtefact('Edge', { source: v1, target: v2, mono: { __flag: true, layerId: 'layer-2' } }, { width: 2, bend: 30, label: 'e1' }, 'layer-1');
+    // e1's isMono artefact lives in layer-2 (a descendant of e1's layer), so it shows as active when layer-2 is focused
+    const e1 = drawing.newArtefact('Edge', { source: v1, target: v2 }, { width: 2, bend: 30, label: 'e1' }, 'layer-1');
     const e2 = drawing.newArtefact('Edge', { source: v2, target: v0 }, { width: 2, bend: 0, label: 'e2' }, 'layer-1');
+    drawing.newArtefact('isMono', { arrow: e1 }, {}, 'layer-2');
     // --- Square Graph for Pullback Demo ---
 
     // Square vertices in Root Layer
@@ -111,29 +112,31 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     ruleDrawing.setIsRule(true);
     drawingStore.saveDrawing('ComposableEdges', ruleDrawing);
 
-    // Rule flag leaving from a child layer: matching must NOT require the flag in the host
-    const ruleFlagInChildLayer = new Drawing(sortStore);
-    const fv0 = ruleFlagInChildLayer.newArtefact('Vertex', {}, { position: [0, 0], label: 'fv0' }, 'root');
-    const fv1 = ruleFlagInChildLayer.newArtefact('Vertex', {}, { position: [100, 0], label: 'fv1' }, 'root');
-    const fv2 = ruleFlagInChildLayer.newArtefact('Vertex', {}, { position: [200, 0], label: 'fv2' }, 'root');
-    ruleFlagInChildLayer.newArtefact('Edge', { source: fv0, target: fv1 }, { width: 2, bend: 0, label: 'fe1' }, 'root');
-    ruleFlagInChildLayer.addLayer('flag-conclusion', 'Flag Conclusion', 'root');
-    ruleFlagInChildLayer.newArtefact('Edge', { source: fv1, target: fv2, mono: { __flag: true, layerId: 'flag-conclusion' } }, { width: 2, bend: 0, label: 'fe2' }, 'root');
-    ruleFlagInChildLayer.newArtefact('Edge', { source: fv0, target: fv2 }, { width: 2, bend: 0, label: 'fe3' }, 'flag-conclusion');
-    ruleFlagInChildLayer.setIsRule(true);
-    drawingStore.saveDrawing('FlagInChildLayer', ruleFlagInChildLayer);
+    // Rule whose isMono artefact leaves from a child layer: matching must NOT require it in the host
+    const ruleIsMonoInChildLayer = new Drawing(sortStore);
+    const fv0 = ruleIsMonoInChildLayer.newArtefact('Vertex', {}, { position: [0, 0], label: 'fv0' }, 'root');
+    const fv1 = ruleIsMonoInChildLayer.newArtefact('Vertex', {}, { position: [100, 0], label: 'fv1' }, 'root');
+    const fv2 = ruleIsMonoInChildLayer.newArtefact('Vertex', {}, { position: [200, 0], label: 'fv2' }, 'root');
+    ruleIsMonoInChildLayer.newArtefact('Edge', { source: fv0, target: fv1 }, { width: 2, bend: 0, label: 'fe1' }, 'root');
+    const ffe2 = ruleIsMonoInChildLayer.newArtefact('Edge', { source: fv1, target: fv2 }, { width: 2, bend: 0, label: 'fe2' }, 'root');
+    ruleIsMonoInChildLayer.addLayer('isMono-conclusion', 'IsMono Conclusion', 'root');
+    ruleIsMonoInChildLayer.newArtefact('Edge', { source: fv0, target: fv2 }, { width: 2, bend: 0, label: 'fe3' }, 'isMono-conclusion');
+    ruleIsMonoInChildLayer.newArtefact('isMono', { arrow: ffe2 }, {}, 'isMono-conclusion');
+    ruleIsMonoInChildLayer.setIsRule(true);
+    drawingStore.saveDrawing('IsMonoInChildLayer', ruleIsMonoInChildLayer);
 
-    // Control: rule flag leaving from the root layer IS required for matching
-    const ruleFlagInRoot = new Drawing(sortStore);
-    const rfv0 = ruleFlagInRoot.newArtefact('Vertex', {}, { position: [0, 0], label: 'rfv0' }, 'root');
-    const rfv1 = ruleFlagInRoot.newArtefact('Vertex', {}, { position: [100, 0], label: 'rfv1' }, 'root');
-    const rfv2 = ruleFlagInRoot.newArtefact('Vertex', {}, { position: [200, 0], label: 'rfv2' }, 'root');
-    ruleFlagInRoot.newArtefact('Edge', { source: rfv0, target: rfv1 }, { width: 2, bend: 0, label: 'rfe1' }, 'root');
-    ruleFlagInRoot.newArtefact('Edge', { source: rfv1, target: rfv2, mono: true }, { width: 2, bend: 0, label: 'rfe2' }, 'root');
-    ruleFlagInRoot.addLayer('flag-root-conclusion', 'Root Flag Conclusion', 'root');
-    ruleFlagInRoot.newArtefact('Edge', { source: rfv0, target: rfv2 }, { width: 2, bend: 0, label: 'rfe3' }, 'flag-root-conclusion');
-    ruleFlagInRoot.setIsRule(true);
-    drawingStore.saveDrawing('FlagInRoot', ruleFlagInRoot);
+    // Control: an isMono artefact in the root layer IS required for matching
+    const ruleIsMonoInRoot = new Drawing(sortStore);
+    const rfv0 = ruleIsMonoInRoot.newArtefact('Vertex', {}, { position: [0, 0], label: 'rfv0' }, 'root');
+    const rfv1 = ruleIsMonoInRoot.newArtefact('Vertex', {}, { position: [100, 0], label: 'rfv1' }, 'root');
+    const rfv2 = ruleIsMonoInRoot.newArtefact('Vertex', {}, { position: [200, 0], label: 'rfv2' }, 'root');
+    ruleIsMonoInRoot.newArtefact('Edge', { source: rfv0, target: rfv1 }, { width: 2, bend: 0, label: 'rfe1' }, 'root');
+    const rfe2 = ruleIsMonoInRoot.newArtefact('Edge', { source: rfv1, target: rfv2 }, { width: 2, bend: 0, label: 'rfe2' }, 'root');
+    ruleIsMonoInRoot.newArtefact('isMono', { arrow: rfe2 }, {}, 'root');
+    ruleIsMonoInRoot.addLayer('isMono-root-conclusion', 'Root IsMono Conclusion', 'root');
+    ruleIsMonoInRoot.newArtefact('Edge', { source: rfv0, target: rfv2 }, { width: 2, bend: 0, label: 'rfe3' }, 'isMono-root-conclusion');
+    ruleIsMonoInRoot.setIsRule(true);
+    drawingStore.saveDrawing('IsMonoInRoot', ruleIsMonoInRoot);
 
     // Rule whose child layer contains an equality: matching must ignore it
     const ruleWithChildEq = new Drawing(sortStore);
@@ -170,11 +173,12 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     const sv1 = secondOrderRule.newArtefact('Vertex', {}, { position: [100, 0], label: 'sv1' }, 'root');
     const sv2 = secondOrderRule.newArtefact('Vertex', {}, { position: [200, 0], label: 'sv2' }, 'root');
 
-    // Conclusion layer (leaf child of root), created before sf so its flag layer exists
+    // Conclusion layer (leaf child of root)
     secondOrderRule.addLayer('conclusion2', 'Conclusion', 'root');
-    secondOrderRule.newArtefact('Edge', { source: sv0, target: sv1, mono: { __flag: true, layerId: 'conclusion2' } }, { width: 2, bend: 0, label: 'sf' }, 'root');
+    const sfe = secondOrderRule.newArtefact('Edge', { source: sv0, target: sv1 }, { width: 2, bend: 0, label: 'sf' }, 'root');
     secondOrderRule.newArtefact('Edge', { source: sv1, target: sv2 }, { width: 2, bend: 0, label: 'sg' }, 'root');
     secondOrderRule.newArtefact('Edge', { source: sv0, target: sv2 }, { width: 2, bend: 0, label: 'sh' }, 'conclusion2');
+    secondOrderRule.newArtefact('isMono', { arrow: sfe }, {}, 'conclusion2');
 
     // Premise layer A (child of root) with child layer B
     secondOrderRule.addLayer('premise-a', 'Premise A', 'root');

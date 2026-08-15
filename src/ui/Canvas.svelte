@@ -82,8 +82,8 @@
         if (!sortDef) return;
 
         let canPreview = true;
-        for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
-            if (expectedSort !== 'flag' && !draft.dependencies[depKey]) {
+        for (const [depKey] of Object.entries(sortDef.dependencies)) {
+            if (!draft.dependencies[depKey]) {
                 canPreview = false;
                 break;
             }
@@ -104,7 +104,6 @@
                 sortDef.drawFunction,
                 draft.layerId
             );
-            tempArt.flagLayers = { ...draft.flagLayers };
             tempArt.draw(svgContext! as unknown as D3Context);
             if (tempArt.svgElement) {
                 tempArt.svgElement.attr('opacity', 0.7);

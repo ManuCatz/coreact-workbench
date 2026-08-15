@@ -38,7 +38,7 @@ All three validate the rule first (`validateRuleDrawing`); they return `[]` if t
 
 Each returned `RuleApplication` contains:
 - `matchedArtefacts`: a map from each pattern artefact to a host artefact;
-- `hostArtefacts`: the set of host artefacts consumed by the match (all matched images plus every non-boolean dependency of those images).
+- `hostArtefacts`: the set of host artefacts consumed by the match (all matched images plus every dependency of those images).
 
 ### 2.1 Equality constraints (`extractEqualityConstraints`)
 
@@ -51,16 +51,10 @@ Root-layer equality artefacts express that their children are provably equal in 
 3. **Backtracking assignment** over the ordered pattern artefacts, with the following per-candidate checks:
    - the candidate's `sortName` must equal the pattern artefact's;
    - each host artefact may be used at most once (`used` set);
-   - **flag dependencies** (`dep === true`):
-     - if the flag **leaves from a child layer** of the rule (`getFlagLayer(k)` is not a rule root layer), it is part of the rule's structure and does **not** constrain matching — the candidate may have the flag set or not;
-     - if the flag **leaves from the rule's root layer**, the candidate must have the flag set (`cand.dependencies[k] === true`), and the **relative depth** of the flag layer with respect to the artefact's layer must be equal in the rule and the host:
-       ```
-       ruleDepth(flagLayer) - ruleDepth(artefactLayer) == hostDepth(flagLayer) - hostDepth(artefactLayer)
-       ```
-     - flags the pattern does not set are never required.
-   - **artefact dependencies**:
+   - **artefact dependencies**: every dependency of a pattern artefact is a real artefact:
      - if the dependency has already been assigned a host image, the candidate's dependency must be that image itself or provably equal to it (`host.areEqual(dep, img, cand.layerId)`);
-     - the candidate's dependency must be a real artefact (not `undefined`, not a boolean).
+     - if the dependency is not part of the pattern (e.g. it lives in a lower ancestor layer), the candidate's dependency must be that same host artefact or provably equal to it;
+     - the candidate must have every dependency of the pattern artefact defined.
 4. **Final check**: once a complete assignment is found, every applicable equality constraint must hold — the assigned images must be pairwise equal via `host.areEqual`.
 5. **Deduplication**: two applications are considered equivalent when every pattern artefact maps to the same host artefact or to host artefacts that are provably equal (`applicationsEquivalent`). Only one representative of each equivalence class is returned.
 
@@ -73,13 +67,6 @@ Root-layer equality artefacts express that their children are provably equal in 
 3. `a` and `b` are equal iff they are in the same connected component (breadth-first search from `a` reaches `b`).
 
 Equality is therefore only visible from layers at or below the layer where the equality artefact was declared (the Layer Hierarchy Rule).
-
-### 2.4 Flag layer semantics (recap)
-
-- `Artefact.getFlagLayer(key)` returns `flagLayers[key]` if the flag was assigned a layer explicitly, otherwise the artefact's own layer.
-- `mono: true` is shorthand for `mono: { __flag: true, layerId: <artefact's layer> }`.
-- A flag may leave from the artefact's layer or any descendant of it; anything else throws a `Consistency Check Failed` error.
-- Only flags leaving from the **rule root layer** constrain matching; flags leaving from child layers are rule structure, not pattern.
 
 ---
 
@@ -96,34 +83,25 @@ When applying a rule, the target host root layer is determined from the match:
 
 ## 4. Application
 
-Application is shared between first- and second-order rules through `applyRuleConclusion(rule, host, application, childLayer)`. It merges a rule's child layer into the host root and returns `{ artefacts, conclusionFlags }`:
+Application is shared between first- and second-order rules through `applyRuleConclusion(rule, host, application, childLayer)`. It merges a rule's child layer into the host root and returns `{ artefacts, created }`:
 
 - `artefacts` — the newly created host artefacts (the conclusion content);
-- `conclusionFlags` — a map from matched host artefacts to the set of flag keys added by the conclusion.
+- `created` — a map from each rule conclusion artefact to its host copy.
 
-### 4.1 Conclusion flag propagation
+### 4.1 Conclusion content
 
-Root-layer rule artefacts may carry flags that **leave from the conclusion layer** (`getFlagLayer(k) === childLayer.id`). Such a flag is neither required for matching (§2.2) nor present on the host artefact. During application it is added to the matched host artefact in the host root:
-
-```
-img.dependencies[k] = true
-img.flagLayers[k]   = hostRootId
-```
-
-If the host artefact already has the flag set, it is left untouched (it is pre-existing host content, not a conclusion addition) and is therefore not recorded in `conclusionFlags`.
+Every non-`Equality` artefact in the conclusion layer is created in the host root as a fresh copy, with its dependencies resolved against the match. This includes tag artefacts such as `isMono`: an `isMono` artefact in the conclusion layer produces a new `isMono` artefact in the host root pointing at the matched host artefact. Conclusion artefacts are never part of the rule's pattern, so they neither constrain matching (§2.2) nor need to pre-exist in the host.
 
 ### 4.2 Conclusion artefact creation
 
 1. The conclusion-layer artefacts (excluding `Equality`) are created in the host root **in dependency order**:
-   - boolean (flag) dependencies are copied as-is;
    - dependencies on rule root-layer artefacts resolve to their matched host images;
    - dependencies on other conclusion artefacts resolve to the copies already created.
-   - Flag layers are remapped from the rule to the host (`remapFlagLayers`, with the rule root and conclusion layer mapped to the host root).
 2. The rule's **child-layer equalities** are re-created in the host root with the same resolution rules, using `addEqualityArtefactUnchecked` (no re-validation) and skipping any that collapse to fewer than two distinct children.
 
 ### 4.3 First-order application (`applyFirstOrderRule`)
 
-1. Validates the rule flag and conditions; requires the root to have **exactly one** child layer (the conclusion).
+1. Validates the rule structure and conditions; requires the root to have **exactly one** child layer (the conclusion).
 2. Calls `applyRuleConclusion` with that single child layer.
 3. Returns the created host artefacts (`artefacts`).
 
@@ -131,7 +109,7 @@ If the host artefact already has the flag set, it is left untouched (it is pre-e
 
 The root has at least two child layers: the **conclusion** (the unique childless child of the root) and one or more **premise layers** (each with at most one child layer).
 
-**Step 1 — conclusion into the host.** `applyRuleConclusion` is called with the conclusion layer. The host root receives the conclusion artefacts and the conclusion-added flags (see §4.1). The result records which host artefacts were created (`conclusionCreated`) so they can be excluded from the derived drawings.
+**Step 1 — conclusion into the host.** `applyRuleConclusion` is called with the conclusion layer. The host root receives the conclusion artefacts (including any conclusion-layer tag artefacts). The result records which host artefacts were created (`conclusionCreated`) so they can be excluded from the derived drawings.
 
 **Step 2 — one derived drawing per premise layer.** For each premise layer `A`:
 
@@ -140,7 +118,6 @@ The root has at least two child layers: the **conclusion** (the unique childless
 3. **Copy the host root** into the derived root as a standalone snapshot:
    - non-`Equality` host root artefacts are copied in dependency order; every host artefact maps 1:1 to a fresh derived artefact;
    - artefacts created by the conclusion (Step 1) are **excluded**;
-   - conclusion-added flags are **excluded** — they are skipped while copying dependencies and deleted from the copy's `flagLayers` after `remapFlagLayers`. Only premise/root content is carried over;
    - host root equality artefacts are copied (again excluding conclusion-created ones), re-resolved against the copies.
 4. **Instantiate premise layer `A`** in the derived root:
    - dependencies on rule root artefacts resolve to the *copies* of the matched host images (`origToCopy`);
@@ -156,8 +133,8 @@ The function returns `{ hostArtefacts, derivedRules }`, where `hostArtefacts` is
 ## 5. Summary of rules of thumb
 
 - **Only the rule's root layer matches.** Everything below it is structure.
-- **Root-layer flags constrain matching; child-layer flags do not.** A matched root-layer flag must be set in the host and at the same relative depth.
+- **Root-layer artefacts constrain matching; child-layer artefacts do not.** An artefact (such as `isMono`) in the rule's root layer must be matched in the host; one in a child/conclusion layer is structure and is created in the host root on application.
 - **Child-layer equalities are never required** for matching; they are re-created in the host when the rule is applied.
 - **Root-layer equalities are required**: matched images must be provably equal in the host.
-- **Applying merges the conclusion into the host root**, including conclusion-layer flags on matched root artefacts.
+- **Applying merges the conclusion into the host root**, including conclusion-layer tag artefacts (e.g. `isMono`).
 - **Second-order application builds one derived drawing per premise** that copies the host root (minus conclusion content) plus the premise layer and its child layer, without rule marking.

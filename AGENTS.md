@@ -117,7 +117,7 @@
 
 1. **`SortStore` (`src/index.ts`)**:
    - Manages sort definitions (`SortDefinition`).
-   - Defines required dependencies (other sorts or `"flag"` for optional booleans), data attributes, and a drawing callback function.
+   - Defines required dependencies (other sorts), data attributes, and a drawing callback function.
    - Supported data attribute primitive types: `"number"`, `"string"`, `"boolean"`, `"position"` (`[x, y]`).
 
 2. **`Layer` & Layer Tree (`src/index.ts`)**:

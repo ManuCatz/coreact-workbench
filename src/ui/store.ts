@@ -50,10 +50,9 @@ export const inspectedArtefact = writable<Artefact | null>(null);
 
 export interface DraftArtefact {
     sortName: string;
-    dependencies: Record<string, Artefact | boolean>;
+    dependencies: Record<string, Artefact>;
     data: Record<string, DataAttributeValue>;
     layerId: string;
-    flagLayers: Record<string, string[]>;
 }
 
 export const draftArtefact = writable<DraftArtefact | null>(null);
@@ -176,8 +175,8 @@ export function togglePositionPicker(artefact: Artefact, attrName: string): void
 export function findNextUnfilledDependency(draft: DraftArtefact): string | null {
     const sortDef = sortStore.getSort(draft.sortName);
     if (!sortDef) return null;
-    for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
-        if (expectedSort !== 'flag' && !draft.dependencies[depKey]) {
+    for (const [depKey] of Object.entries(sortDef.dependencies)) {
+        if (!draft.dependencies[depKey]) {
             return depKey;
         }
     }
@@ -201,50 +200,6 @@ export function setDraftLayer(layerId: string): void {
     draftArtefact.update(d => {
         if (!d) return d;
         d.layerId = layerId;
-        const descendants = drawing.getDescendants(layerId);
-        for (const [flagKey, flagLayerIds] of Object.entries(d.flagLayers)) {
-            const surviving = flagLayerIds.filter(flagLayerId => descendants.has(flagLayerId));
-            if (surviving.length > 0) {
-                d.flagLayers[flagKey] = surviving;
-            } else {
-                delete d.flagLayers[flagKey];
-            }
-        }
-        return d;
-    });
-    refresh();
-}
-
-export function toggleDraftFlag(flagKey: string, checked: boolean): void {
-    draftArtefact.update(d => {
-        if (!d) return d;
-        if (checked) {
-            d.dependencies[flagKey] = true;
-        } else {
-            delete d.dependencies[flagKey];
-            delete d.flagLayers[flagKey];
-        }
-        return d;
-    });
-    refresh();
-}
-
-export function toggleDraftFlagLayer(flagKey: string, layerId: string): void {
-    draftArtefact.update(d => {
-        if (!d) return d;
-        const currentLayers = d.flagLayers[flagKey];
-        const layers = new Set(currentLayers && currentLayers.length > 0 ? currentLayers : [d.layerId]);
-        if (layers.has(layerId)) {
-            layers.delete(layerId);
-        } else {
-            layers.add(layerId);
-        }
-        if (layers.size > 0) {
-            d.flagLayers[flagKey] = Array.from(layers);
-        } else {
-            delete d.flagLayers[flagKey];
-            delete d.dependencies[flagKey];
-        }
         return d;
     });
     refresh();
@@ -275,8 +230,7 @@ export function startDraftForSort(sortDef: SortDefinition): void {
         sortName: sortDef.name,
         dependencies: {},
         data: initialData,
-        layerId: defaultLayerId,
-        flagLayers: {}
+        layerId: defaultLayerId
     });
     dependencyPickingFor.set(null);
     stopPositionPicker();
@@ -300,12 +254,7 @@ export function createDraftArtefact(): boolean {
     const draft = get(draftArtefact);
     if (!draft) return false;
     try {
-        const finalDeps: Record<string, Artefact | boolean | { __flag: true; layerIds: string[] }> = { ...draft.dependencies };
-        for (const [flagKey, flagLayerIds] of Object.entries(draft.flagLayers)) {
-            if (finalDeps[flagKey] === true) {
-                finalDeps[flagKey] = { __flag: true, layerIds: flagLayerIds };
-            }
-        }
+        const finalDeps: Record<string, Artefact> = { ...draft.dependencies };
         drawing.newArtefact(draft.sortName, finalDeps, draft.data, draft.layerId);
         draftArtefact.set(null);
         dependencyPickingFor.set(null);
@@ -324,8 +273,8 @@ export function isDraftComplete(draft: DraftArtefact): boolean {
     if (draft.sortName === 'Equality') {
         return equalityChildren(draft).length >= 2;
     }
-    for (const [depKey, expectedSort] of Object.entries(sortDef.dependencies)) {
-        if (expectedSort !== 'flag' && !draft.dependencies[depKey]) {
+    for (const [depKey] of Object.entries(sortDef.dependencies)) {
+        if (!draft.dependencies[depKey]) {
             return false;
         }
     }
@@ -435,11 +384,6 @@ export function isProvablyEqualCandidate(art: Artefact): boolean {
 // Misc helpers
 // ---------------------------------------------------------------------------
 
-export function flagLayerCandidates(artefactLayerId: string): string[] {
-    const candidates = new Set([artefactLayerId, ...drawing.getDescendants(artefactLayerId)]);
-    return drawing.getAllLayers().filter(l => candidates.has(l.id)).map(l => l.id);
-}
-
 export function getArtefactLabel(art: Artefact): string {
     if (art.data.label) return art.data.label;
     if (art.sortName === 'Equality') {
@@ -448,23 +392,8 @@ export function getArtefactLabel(art: Artefact): string {
     return '(unnamed)';
 }
 
-export function equalityChildren(art: { dependencies: Record<string, Artefact | boolean> }): Artefact[] {
-    return Object.values(art.dependencies).filter((v): v is Artefact => typeof v !== 'boolean');
-}
-
-export function activeFlagsLabel(art: Artefact): string[] {
-    return Object.entries(art.dependencies)
-        .filter(([_, val]) => val === true)
-        .map(([key]) => {
-            const flagLayers = art.getFlagLayers(key);
-            const nonOwn = flagLayers.filter(l => l !== art.layerId);
-            if (nonOwn.length === 0) return key;
-            const layerNames = nonOwn.map(l => {
-                const layer = drawing.getLayer(l);
-                return layer ? layer.name : l;
-            });
-            return `${key}@${layerNames.join(',')}`;
-        });
+export function equalityChildren(art: { dependencies: Record<string, Artefact> }): Artefact[] {
+    return Object.values(art.dependencies);
 }
 
 // ---------------------------------------------------------------------------
@@ -604,32 +533,6 @@ export function setArtefactLayer(art: Artefact, targetLayerId: string): void {
     refresh();
 }
 
-export function setArtefactFlag(art: Artefact, flagKey: string, checked: boolean): void {
-    if (checked) {
-        art.dependencies[flagKey] = true;
-    } else {
-        delete art.dependencies[flagKey];
-        delete art.flagLayers[flagKey];
-    }
-    refresh();
-}
-
-export function toggleArtefactFlagLayer(art: Artefact, flagKey: string, layerId: string): void {
-    const layers = new Set(art.getFlagLayers(flagKey));
-    if (layers.has(layerId)) {
-        layers.delete(layerId);
-    } else {
-        layers.add(layerId);
-    }
-    if (layers.size > 0) {
-        art.flagLayers[flagKey] = Array.from(layers);
-    } else {
-        delete art.flagLayers[flagKey];
-        delete art.dependencies[flagKey];
-    }
-    refresh();
-}
-
 export function pickDraftDependency(artefact: Artefact): void {
     const draft = get(draftArtefact);
     const picking = get(dependencyPickingFor);
@@ -665,10 +568,8 @@ export function pickDraftDependency(artefact: Artefact): void {
     }
 }
 
-export function removeArtefactNode(artefact: Artefact, parentArtefact: Artefact | null = null, tagKey: string | null = null): void {
-    if (tagKey) {
-        delete artefact.dependencies[tagKey];
-    } else if (parentArtefact && parentArtefact.sortName === 'Equality') {
+export function removeArtefactNode(artefact: Artefact, parentArtefact: Artefact | null = null): void {
+    if (parentArtefact && parentArtefact.sortName === 'Equality') {
         drawing.removeEqualityChild(parentArtefact, artefact);
     } else {
         drawing.removeArtefact(artefact);

@@ -105,10 +105,6 @@ function getSort(sortStore: SortStore, name: string): SortDefinition {
     return def;
 }
 
-function nonFlagDeps(def: SortDefinition): Array<[string, string]> {
-    return Object.entries(def.dependencies).filter(([, sortName]) => sortName !== "flag");
-}
-
 function uniquePrefix(depKey: string, used: Set<string>): string {
     const base = sanitizeIdent(depKey);
     let prefix = base;
@@ -123,7 +119,7 @@ function uniquePrefix(depKey: string, used: Set<string>): string {
 
 function leafBinderNames(sortStore: SortStore, sortName: string): string[] {
     const def = getSort(sortStore, sortName);
-    const deps = nonFlagDeps(def);
+    const deps = Object.entries(def.dependencies);
     if (deps.length === 0) {
         return [];
     }
@@ -140,7 +136,7 @@ function leafBinderNames(sortStore: SortStore, sortName: string): string[] {
 }
 
 function sortHeaderType(sortStore: SortStore, def: SortDefinition): string {
-    const deps = nonFlagDeps(def);
+    const deps = Object.entries(def.dependencies);
     if (deps.length === 0) {
         return "Type";
     }
@@ -162,14 +158,6 @@ function sortHeaderType(sortStore: SortStore, def: SortDefinition): string {
     }
     const tail = arrows.length > 0 ? `${arrows.join(" -> ")} -> Type` : "Type";
     return `forall ${binders.join(" ")}, ${tail}`;
-}
-
-function flagHeaderType(sortStore: SortStore, sortName: string): string {
-    const leafs = leafBinderNames(sortStore, sortName);
-    if (leafs.length === 0) {
-        return `${sortName} -> Prop`;
-    }
-    return `forall \`(e : ${sortName} ${leafs.join(" ")}), Prop`;
 }
 
 export interface FieldItem {
@@ -303,7 +291,7 @@ function stringDepEntries(dependencies: Record<string, string | boolean>): Array
 function fieldType(model: DrawingModel, sortStore: SortStore, art: ArtefactData): string {
     const def = getSort(sortStore, art.sortName);
     const depRefs: string[] = [];
-    for (const [depKey] of nonFlagDeps(def)) {
+    for (const [depKey] of Object.entries(def.dependencies)) {
         const depValue = art.dependencies[depKey];
         if (typeof depValue !== "string") {
             throw new Error(
@@ -342,67 +330,15 @@ function equalityFieldType(model: DrawingModel, art: ArtefactData): string {
     return pairs.join(" /\\ ");
 }
 
-interface FlagField {
-    layerId: string;
-    artefactId: string;
-    flagKey: string;
-    name: string;
-    type: string;
-    depFieldNames: string[];
-}
-
 export interface ProofFieldNames {
-    flagFieldNames: Map<string, string>;
     equalityFieldNames: Map<string, string>;
-    flagFieldsByLayer: Map<string, FlagField[]>;
 }
 
 export function computeProofFieldNames(
     savedDrawing: SavedDrawing,
-    sortStore: SortStore,
     model: DrawingModel,
     registry: NameRegistry
 ): ProofFieldNames {
-    const flagFieldNames = new Map<string, string>();
-    const flagFieldsByLayer = new Map<string, FlagField[]>();
-
-    for (const art of savedDrawing.artefacts) {
-        if (art.sortName === "Equality") {
-            continue;
-        }
-        const def = getSort(sortStore, art.sortName);
-        for (const [flagKey, expectedSortName] of Object.entries(def.dependencies)) {
-            if (expectedSortName !== "flag") {
-                continue;
-            }
-            if (art.dependencies[flagKey] !== true) {
-                continue;
-            }
-            const rawLayers: string | string[] | undefined = art.flagLayers?.[flagKey];
-            const flagLayerIds: string[] = Array.isArray(rawLayers)
-                ? rawLayers
-                : (rawLayers ? [rawLayers] : [art.layerId]);
-            const artefactFieldName = model.fieldNames.get(art.id);
-            if (!artefactFieldName) {
-                throw new Error(`Consistency Check Failed: No field assigned for flagged artefact '${labelOf(art)}'.`);
-            }
-            for (const flagLayerId of flagLayerIds) {
-                const name = registry.unique(`${flagKey}_${artefactFieldName}`);
-                flagFieldNames.set(`${art.id}::${flagKey}::${flagLayerId}`, name);
-                const list = flagFieldsByLayer.get(flagLayerId) ?? [];
-                list.push({
-                    layerId: flagLayerId,
-                    artefactId: art.id,
-                    flagKey,
-                    name,
-                    type: `${flagKey} ${refFrom(model, flagLayerId, art.id)}`,
-                    depFieldNames: art.layerId === flagLayerId ? [artefactFieldName] : []
-                });
-                flagFieldsByLayer.set(flagLayerId, list);
-            }
-        }
-    }
-
     const equalityFieldNames = new Map<string, string>();
     for (const layer of model.layerOrder) {
         const layerArtefacts = savedDrawing.artefacts.filter(art => art.layerId === layer.id);
@@ -414,7 +350,7 @@ export function computeProofFieldNames(
         }
     }
 
-    return { flagFieldNames, equalityFieldNames, flagFieldsByLayer };
+    return { equalityFieldNames };
 }
 
 // ---------------------------------------------------------------------------
@@ -422,10 +358,8 @@ export function computeProofFieldNames(
 // ---------------------------------------------------------------------------
 
 export interface LayerElement extends FieldItem {
-    kind: "artefact" | "flag" | "equation";
+    kind: "artefact" | "equation";
     artefactId?: string;
-    flagKey?: string;
-    layerId?: string;
 }
 
 export function buildLayerElements(
@@ -457,7 +391,7 @@ export function buildLayerElements(
             }
             const depFieldNames: string[] = [];
             const def = getSort(sortStore, art.sortName);
-            for (const [depKey] of nonFlagDeps(def)) {
+            for (const [depKey] of Object.entries(def.dependencies)) {
                 const depValue = art.dependencies[depKey];
                 if (typeof depValue === "string") {
                     const depArt = model.artefactById.get(depValue);
@@ -471,11 +405,6 @@ export function buildLayerElements(
             }
             items.push({ name: fieldName, type: fieldType(model, sortStore, art), deps: depFieldNames, kind: "artefact", artefactId: art.id });
         }
-    }
-
-    const flagFields = proofNames.flagFieldsByLayer.get(layerId) ?? [];
-    for (const flag of flagFields) {
-        items.push({ name: flag.name, type: flag.type, deps: flag.depFieldNames, kind: "flag", artefactId: flag.artefactId, flagKey: flag.flagKey, layerId: flag.layerId });
     }
 
     return topoSortFields(items) as LayerElement[];
@@ -583,7 +512,7 @@ export function ruleTypeInfo(
     options: RuleTypeOptions
 ): RuleTypeInfo {
     const model = buildDrawingModel(savedDrawing, registry);
-    const proofNames = computeProofFieldNames(savedDrawing, sortStore, model, registry);
+    const proofNames = computeProofFieldNames(savedDrawing, model, registry);
 
     const rootLayers = savedDrawing.layers.filter(l => l.parentId === null);
     if (rootLayers.length !== 1) {
@@ -668,17 +597,6 @@ export function ruleTypeInfo(
 export function newExportRegistry(sortStore: SortStore): NameRegistry {
     const registry = new NameRegistry();
     const sortDefs = sortStore.getAllSorts().filter(def => def.name !== "Equality");
-    const flagPredicates = new Set<string>();
-    for (const def of sortDefs) {
-        for (const [flagKey, depSortName] of Object.entries(def.dependencies)) {
-            if (depSortName === "flag") {
-                flagPredicates.add(flagKey);
-            }
-        }
-    }
-    for (const name of flagPredicates) {
-        registry.reserve(name);
-    }
     for (const def of sortDefs) {
         registry.reserve(def.name);
     }
@@ -722,7 +640,7 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
             return;
         }
         const def = getSort(sortStore, name);
-        for (const [, depSortName] of nonFlagDeps(def)) {
+        for (const [, depSortName] of Object.entries(def.dependencies)) {
             if (depSortName !== "Equality") {
                 emitSort(depSortName);
             }
@@ -732,21 +650,6 @@ export function exportDrawingsToRocq(savedDrawings: SavedDrawing[], sortStore: S
     };
     for (const def of sortDefs) {
         emitSort(def.name);
-    }
-
-    const flagPredicates = new Set<string>();
-    for (const def of sortDefs) {
-        for (const [flagKey, depSortName] of Object.entries(def.dependencies)) {
-            if (depSortName === "flag") {
-                flagPredicates.add(flagKey);
-            }
-        }
-    }
-    for (const flagName of flagPredicates) {
-        const host = sortDefs.find(def => Object.values(def.dependencies).includes("flag") && Object.keys(def.dependencies).includes(flagName));
-        if (host) {
-            lines.push(`Parameter ${flagName} : ${flagHeaderType(sortStore, host.name)}.`);
-        }
     }
 
     const rules = savedDrawings.filter(drawing => drawing.isRule);
@@ -770,9 +673,7 @@ export interface DrawingExportNames {
     ruleParam: string | null;
     recordNames: Map<string, string>;
     fieldNames: Map<string, string>;
-    flagFieldNames: Map<string, string>;
     equalityFieldNames: Map<string, string>;
-    flagFieldsByLayer: Map<string, FlagField[]>;
     model: DrawingModel;
 }
 
@@ -780,17 +681,6 @@ export function drawingExportNames(savedDrawing: SavedDrawing, sortStore: SortSt
     const registry = new NameRegistry();
     const sortDefs = sortStore.getAllSorts().filter(def => def.name !== "Equality");
 
-    const flagPredicates = new Set<string>();
-    for (const def of sortDefs) {
-        for (const [flagKey, depSortName] of Object.entries(def.dependencies)) {
-            if (depSortName === "flag") {
-                flagPredicates.add(flagKey);
-            }
-        }
-    }
-    for (const name of flagPredicates) {
-        registry.reserve(name);
-    }
     for (const def of sortDefs) {
         registry.reserve(def.name);
     }
@@ -801,7 +691,7 @@ export function drawingExportNames(savedDrawing: SavedDrawing, sortStore: SortSt
 
     const moduleName = registry.unique(sanitizeIdent(savedDrawing.name || "Drawing"));
     const model = buildDrawingModel(savedDrawing, registry);
-    const proofNames = computeProofFieldNames(savedDrawing, sortStore, model, registry);
+    const proofNames = computeProofFieldNames(savedDrawing, model, registry);
     let ruleParam: string | null = null;
     if (savedDrawing.isRule) {
         ruleParam = registry.unique(`${moduleName}_rule`);
@@ -812,9 +702,7 @@ export function drawingExportNames(savedDrawing: SavedDrawing, sortStore: SortSt
         ruleParam,
         recordNames: model.recordNames,
         fieldNames: model.fieldNames,
-        flagFieldNames: proofNames.flagFieldNames,
         equalityFieldNames: proofNames.equalityFieldNames,
-        flagFieldsByLayer: proofNames.flagFieldsByLayer,
         model
     };
 }

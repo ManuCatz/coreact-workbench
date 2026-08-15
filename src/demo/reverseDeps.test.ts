@@ -79,7 +79,7 @@ describe('reverse dependency fields', () => {
         const drawing = makeDrawing();
         const v0 = makeVertex(drawing, 'v0');
         const v1 = makeVertex(drawing, 'v1');
-        const e = drawing.newArtefact('Edge', { source: v0, target: v1, mono: true }, { width: 4, bend: 3, label: 'e' }, 'root');
+        const e = drawing.newArtefact('Edge', { source: v0, target: v1 }, { width: 4, bend: 3, label: 'e' }, 'root');
         drawing.newArtefact('isMono', { arrow: e }, {}, 'root');
 
         const resolved = resolvedWithReverseInfo(drawing, e);
@@ -87,7 +87,6 @@ describe('reverse dependency fields', () => {
         expect(resolved.bend).toBe(3);
         expect(resolved.source).toBeDefined();
         expect(resolved.target).toBeDefined();
-        expect(resolved.mono).toBe(true);
         expect(resolved.isMono).toBe(true);
     });
 });
