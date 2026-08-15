@@ -71,15 +71,51 @@ interface SortStore {
                 const midX = 0.25 * srcPos[0] + 0.5 * cx + 0.25 * tgtPos[0];
                 const midY = 0.25 * srcPos[1] + 0.5 * cy + 0.25 * tgtPos[1];
 
+                const R = 20;
+
+                // Initial tangent at t=0
+                let ux0 = cx - srcPos[0], uy0 = cy - srcPos[1];
+                const u0Len = Math.hypot(ux0, uy0);
+                ux0 = u0Len > 0 ? ux0 / u0Len : (len > 0 ? dx / len : 1);
+                uy0 = u0Len > 0 ? uy0 / u0Len : (len > 0 ? dy / len : 0);
+
+                // Final tangent at t=1
+                let ux1 = tgtPos[0] - cx, uy1 = tgtPos[1] - cy;
+                const u1Len = Math.hypot(ux1, uy1);
+                ux1 = u1Len > 0 ? ux1 / u1Len : (len > 0 ? dx / len : 1);
+                uy1 = u1Len > 0 ? uy1 / u1Len : (len > 0 ? dy / len : 0);
+
+                const width = typeof data.width === "number" ? data.width : 2;
+
+                const startX = srcPos[0] + ux0 * R;
+                const startY = srcPos[1] + uy0 * R;
+                
+                // Arrowhead size scales with the edge width
+                const halfW = width * 2;
+                const L = halfW * 2.5;
+                const baseX = tgtPos[0] - ux1 * (R + L);
+                const baseY = tgtPos[1] - uy1 * (R + L);
+
+                const tipX = tgtPos[0] - ux1 * R;
+                const tipY = tgtPos[1] - uy1 * R;
+
+                // Perpendicular to the final tangent (for the arrow base half-width)
+                const px = -uy1, py = ux1;
+
                 const lineGroup = context.insert("g", ":first-child");
 
                 lineGroup.append("path")
-                    .attr("d", `M ${srcPos[0]},${srcPos[1]} Q ${cx},${cy} ${tgtPos[0]},${tgtPos[1]}`)
+                    .attr("d", `M ${startX},${startY} Q ${cx},${cy} ${baseX},${baseY}`)
                     .attr("fill", "none")
                     .attr("stroke", data.mono ? "#2c3e50" : "#999")
                     .attr("stroke-width", data.width)
-                    .attr("stroke-dasharray", data.mono ? "5,5" : "none")
-                    .attr("marker-end", data.mono ? "url(#arrowhead-mono)" : "url(#arrowhead-normal)");
+                    .attr("stroke-dasharray", data.mono ? "5,5" : "none");
+
+                // Manual arrowhead polygon
+                lineGroup.append("path")
+                    .attr("d", `M ${baseX - px * halfW},${baseY - py * halfW} L ${tipX},${tipY} L ${baseX + px * halfW},${baseY + py * halfW} Z`)
+                    .attr("fill", data.mono ? "#2c3e50" : "#999")
+                    .attr("stroke", "none");
 
                 if (data.mono) {
                     // Draw a small indicator hook/circle if mono flag is true
@@ -102,39 +138,6 @@ interface SortStore {
                 }
 
                 return lineGroup; // Return the line group
-            },
-            (context: import('./types').D3Context) => {
-                // initContext: Set up SVG Defs for Arrowhead Markers
-                let defs = context.select<SVGDefsElement>("defs");
-                if (defs.empty()) {
-                    defs = context.append("defs");
-                }
-
-                // Standard arrowhead
-                defs.append("marker")
-                    .attr("id", "arrowhead-normal")
-                    .attr("viewBox", "0 -5 10 10")
-                    .attr("refX", 25) // Offset to sit on the edge of the r=20 circle
-                    .attr("refY", 0)
-                    .attr("orient", "auto")
-                    .attr("markerWidth", 8)
-                    .attr("markerHeight", 8)
-                    .append("path")
-                    .attr("d", "M0,-5L10,0L0,5")
-                    .attr("fill", "#999");
-
-                // Mono arrowhead
-                defs.append("marker")
-                    .attr("id", "arrowhead-mono")
-                    .attr("viewBox", "0 -5 10 10")
-                    .attr("refX", 25) 
-                    .attr("refY", 0)
-                    .attr("orient", "auto")
-                    .attr("markerWidth", 8)
-                    .attr("markerHeight", 8)
-                    .append("path")
-                    .attr("d", "M0,-5L10,0L0,5")
-                    .attr("fill", "#2c3e50");
             }
         )
         .newSort(
@@ -274,7 +277,8 @@ interface SortStore {
                 const tgtPos = data.arrow.target.position;
                 const bend = typeof data.arrow.bend === "number" ? data.arrow.bend : 0;
                 const strokeColor = data.arrow.mono ? "#2c3e50" : "#999";
-                const strokeWidth = typeof data.arrow.width === "number" ? data.arrow.width : 2;
+                const baseWidth = typeof data.arrow.width === "number" ? data.arrow.width : 2;
+                const strokeWidth = baseWidth;
 
                 const dx = tgtPos[0] - srcPos[0];
                 const dy = tgtPos[1] - srcPos[1];
@@ -293,33 +297,39 @@ interface SortStore {
                 const cy = my + bend * ny;
 
                 // Derivative at t=0 to find the initial tangent of the curve
-                // B'(0) = 2 * (cx - srcPos[0]), 2 * (cy - srcPos[1])
                 const tx = cx - srcPos[0];
                 const ty = cy - srcPos[1];
                 const tLen = Math.sqrt(tx * tx + ty * ty);
                 const ux = tLen > 0 ? tx / tLen : 1;
                 const uy = tLen > 0 ? ty / tLen : 0;
                 
-                // Perpendicular to the tangent (for the hook's normal)
+                // Perpendicular to the tangent (hook hangs on the right-hand side of travel)
                 const px = -uy;
                 const py = ux;
 
-                // Position the hook just outside the vertex circle (r=20)
-                const offset = 22;
-                const startX = srcPos[0] + ux * offset;
-                const startY = srcPos[1] + uy * offset;
+                // Semi-circle radius grows with the arrow width
+                const r = Math.max(3, baseWidth * 2.5);
+                // Offset the hook along the tail so the semi-circle clears the
+                // source vertex boundary (vertex circle radius is 20)
+                const vertexRadius = 20;
+                const margin = 4;
+                const offset = Math.sqrt(Math.pow(vertexRadius + margin + r, 2) - r * r);
+                const tailX = srcPos[0] + ux * offset;
+                const tailY = srcPos[1] + uy * offset;
 
-                // Calculate the points for the hook path (a semi-circle)
-                // We draw a small arc starting from an offset perpendicular to the line, curving into the line
-                const hookRadius = 5;
-                const hookTipX = startX + px * hookRadius;
-                const hookTipY = startY + py * hookRadius;
+                // Center of the hook's circle, offset to the perpendicular side
+                const cX = tailX + px * r;
+                const cY = tailY + py * r;
+
+                // End of the semi-circle, diametrically opposite the tail point so the path ends backwards
+                const endX = cX + px * r;
+                const endY = cY + py * r;
 
                 const group = context.append("g");
 
-                // Arc path for the hook: A rx ry x-axis-rotation large-arc-flag sweep-flag x y
+                // Semi-circle starting at the end of the tail and ending backwards
                 group.append("path")
-                    .attr("d", `M ${hookTipX},${hookTipY} A ${hookRadius} ${hookRadius} 0 0 1 ${startX},${startY}`)
+                    .attr("d", `M ${tailX},${tailY} A ${r} ${r} 0 0 0 ${endX},${endY}`)
                     .attr("fill", "none")
                     .attr("stroke", strokeColor)
                     .attr("stroke-width", strokeWidth)
