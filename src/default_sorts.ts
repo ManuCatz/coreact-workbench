@@ -12,6 +12,16 @@ interface SortStore {
     ): SortStore;
 }
 
+const VERTEX_RADIUS = 20;
+const HOOK_MARGIN = 4;
+
+// Distance from the source vertex center to the beginning of the isMono
+// semi-circle hook, measured along the initial edge tangent.
+function hookStartOffset(width: number): number {
+    const r = Math.max(3, width * 2.5);
+    return Math.sqrt(Math.pow(VERTEX_RADIUS + HOOK_MARGIN + r, 2) - r * r);
+}
+
 {
     sortStore
         .newSort(
@@ -87,8 +97,12 @@ interface SortStore {
 
                 const width = typeof data.width === "number" ? data.width : 2;
 
-                const startX = srcPos[0] + ux0 * R;
-                const startY = srcPos[1] + uy0 * R;
+                // When an isMono hook is drawn on this edge, shorten the tail so it
+                // ends exactly at the beginning of the hook's semi-circle.
+                const startDist = data.isMono ? hookStartOffset(width) : R;
+
+                const startX = srcPos[0] + ux0 * startDist;
+                const startY = srcPos[1] + uy0 * startDist;
                 
                 // Arrowhead size scales with the edge width
                 const halfW = width * 2;
@@ -310,10 +324,8 @@ interface SortStore {
                 // Semi-circle radius grows with the arrow width
                 const r = Math.max(3, baseWidth * 2.5);
                 // Offset the hook along the tail so the semi-circle clears the
-                // source vertex boundary (vertex circle radius is 20)
-                const vertexRadius = 20;
-                const margin = 4;
-                const offset = Math.sqrt(Math.pow(vertexRadius + margin + r, 2) - r * r);
+                // source vertex boundary, matching the edge tail's start point
+                const offset = hookStartOffset(baseWidth);
                 const tailX = srcPos[0] + ux * offset;
                 const tailY = srcPos[1] + uy * offset;
 

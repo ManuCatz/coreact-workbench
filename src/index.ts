@@ -99,6 +99,18 @@ export type ResolvedDependency = Artefact | boolean;
  */
 export type DataAttributeValue = string | number | boolean | [number, number];
 
+/**
+ * Precomputed reverse-dependency lookup used to inject a boolean field per
+ * parent sort (a sort with exactly one dependency of the artefact's sort)
+ * into resolved data. Built once per `Drawing.draw` call.
+ */
+export interface ReverseDependencyInfo {
+    /** sortName -> names of parent sorts that have exactly one dependency of that sort */
+    fieldsFor: Map<string, string[]>;
+    /** artefact -> set of parent sort names that have a visible artefact depending on it */
+    present: Map<Artefact, Set<string>>;
+}
+
 export class Artefact {
     public svgElement: D3Context | null = null; // Store the rendered SVG element
     // A flag may be established in several layers at once; the artefact's own
@@ -137,8 +149,18 @@ export class Artefact {
         return layers;
     }
 
-    getResolvedData(isLayerVisible?: (layerId: string) => boolean): Record<string, any> {
+    getResolvedData(isLayerVisible?: (layerId: string) => boolean, reverseInfo?: ReverseDependencyInfo): Record<string, any> {
         const result = { ...this.data };
+        if (reverseInfo) {
+            const parentFields = reverseInfo.fieldsFor.get(this.sortName);
+            if (parentFields) {
+                const presentSorts = reverseInfo.present.get(this);
+                for (const field of parentFields) {
+                    if (field in result || field in this.dependencies) continue;
+                    result[field] = presentSorts?.has(field) ?? false;
+                }
+            }
+        }
         for (const [key, depArtefact] of Object.entries(this.dependencies)) {
             if (typeof depArtefact === "boolean") {
                 if (depArtefact === true && isLayerVisible) {
@@ -147,7 +169,7 @@ export class Artefact {
                     result[key] = depArtefact;
                 }
             } else {
-                result[key] = depArtefact.getResolvedData(isLayerVisible);
+                result[key] = depArtefact.getResolvedData(isLayerVisible, reverseInfo);
             }
         }
         return result;
@@ -166,8 +188,8 @@ export class Artefact {
         return result;
     }
 
-    draw(context: D3Context, isLayerVisible?: (layerId: string) => boolean): void {
-        this.svgElement = this.drawFunction(this.getResolvedData(isLayerVisible), context);
+    draw(context: D3Context, isLayerVisible?: (layerId: string) => boolean, reverseInfo?: ReverseDependencyInfo): void {
+        this.svgElement = this.drawFunction(this.getResolvedData(isLayerVisible, reverseInfo), context);
     }
 }
 
@@ -1012,7 +1034,10 @@ export class Drawing {
             }
         }
 
-        // 2. Draw layers in topological order
+        // 2. Build reverse-dependency info: one boolean field per parent sort
+        const reverseInfo = this.buildReverseDependencyInfo();
+
+        // 3. Draw layers in topological order
         const orderedLayers = this.getLayersTopological();
         for (const layer of orderedLayers) {
             const layerGroup = context.append("g")
@@ -1027,7 +1052,7 @@ export class Drawing {
             const layerArtefacts = this.artefacts.filter(a => a.layerId === layer.id);
             const isLayerVisible = (layerId: string) => this.isLayerVisible(layerId);
             for (const artefact of layerArtefacts) {
-                artefact.draw(layerGroup, isLayerVisible);
+                artefact.draw(layerGroup, isLayerVisible, reverseInfo);
                 if (this.focusedLayerId !== null) {
                     const focused = this.isFocused(artefact);
                     if (artefact.svgElement && artefact.svgElement.attr) {
@@ -1043,6 +1068,52 @@ export class Drawing {
                 layerGroup.selectAll("circle").attr("stroke", layer.color).attr("fill", layer.color);
             }
         }
+    }
+
+    /**
+     * Computes, once per draw, the reverse-dependency lookup used to inject a
+     * boolean field per parent sort (a sort with exactly one dependency of the
+     * artefact's sort) into the resolved data of every artefact.
+     */
+    public buildReverseDependencyInfo(): ReverseDependencyInfo {
+        const fieldsFor = new Map<string, string[]>();
+        const singleDepSort = new Map<string, string>();
+
+        for (const sortDef of this.sortStore.getAllSorts()) {
+            const depEntries = Object.entries(sortDef.dependencies);
+            if (depEntries.length !== 1) continue;
+            const depSortName = depEntries[0][1];
+            if (depSortName === "flag" || !this.sortStore.getSort(depSortName)) continue;
+
+            singleDepSort.set(sortDef.name, depSortName);
+            let list = fieldsFor.get(depSortName);
+            if (!list) {
+                list = [];
+                fieldsFor.set(depSortName, list);
+            }
+            list.push(sortDef.name);
+        }
+
+        const present = new Map<Artefact, Set<string>>();
+        for (const art of this.artefacts) {
+            if (!this.isLayerVisible(art.layerId)) continue;
+            const depSortName = singleDepSort.get(art.sortName);
+            if (!depSortName) continue;
+
+            const depValues = Object.values(art.dependencies);
+            if (depValues.length !== 1) continue;
+            const depArtefact = depValues[0];
+            if (typeof depArtefact === "boolean") continue;
+
+            let set = present.get(depArtefact);
+            if (!set) {
+                set = new Set();
+                present.set(depArtefact, set);
+            }
+            set.add(art.sortName);
+        }
+
+        return { fieldsFor, present };
     }
 
     getArtefacts(): Artefact[] {
