@@ -18,7 +18,7 @@ interface SortStore {
             "Vertex",
             {},
             { position: "position" },
-            (data: any, context: D3Context) => {
+            (data: any, context: import('./types').D3Context) => {
                 // Draw a vertex (circle) at data.position
                 const group = context.append("g")
                     .attr("transform", `translate(${data.position[0]}, ${data.position[1]})`);
@@ -46,7 +46,7 @@ interface SortStore {
             "Edge",
             { source: "Vertex", target: "Vertex", mono: "flag" }, // Dependencies + flag
             { width: "number", bend: "number" },
-            (data: any, context: D3Context) => {
+            (data: any, context: import('./types').D3Context) => {
                 const srcPos = data.source.position;
                 const tgtPos = data.target.position;
                 const bend = typeof data.bend === "number" ? data.bend : 0;
@@ -103,7 +103,7 @@ interface SortStore {
 
                 return lineGroup; // Return the line group
             },
-            (context: D3Context) => {
+            (context: import('./types').D3Context) => {
                 // initContext: Set up SVG Defs for Arrowhead Markers
                 let defs = context.select<SVGDefsElement>("defs");
                 if (defs.empty()) {
@@ -141,7 +141,7 @@ interface SortStore {
             "Pullback",
             { p1: "Edge", p2: "Edge", q1: "Edge", q2: "Edge" },
             {},
-            (data: any, context: D3Context) => {
+            (data: any, context: import('./types').D3Context) => {
                 // Assume p1 and p2 share the pullback source vertex
                 const V = data.p1.source.position;
                 const T1 = data.p1.target.position;
@@ -180,14 +180,14 @@ interface SortStore {
                     .attr("fill", "none")
                     .attr("stroke", "#333")
                     .attr("stroke-width", 2)
-                    .attr("stroke-linejoin", "miter")) as unknown as D3Context;
+                    .attr("stroke-linejoin", "miter")) as unknown as import('./types').D3Context;
             }
         )
         .newSort(
             "Triangle",
             { "1": "Edge", "2": "Edge", o: "Edge" },
             {},
-            (data: any, context: D3Context) => {
+            (data: any, context: import('./types').D3Context) => {
                 // A triangle is composed of three edges: "1", "2", and "o".
                 // Draw it like a 2-cell: a double arrow from the target of edge
                 // "1" to the middle of edge "o".
@@ -245,7 +245,7 @@ interface SortStore {
 
                 return group;
             },
-            (context: D3Context) => {
+            (context: import('./types').D3Context) => {
                 // initContext: Set up SVG Defs for the 2-cell Arrowhead Marker
                 let defs = context.select<SVGDefsElement>("defs");
                 if (defs.empty()) {
@@ -263,6 +263,69 @@ interface SortStore {
                     .append("path")
                     .attr("d", "M0,-5L10,0L0,5")
                     .attr("fill", "#8e44ad");
+            }
+        )
+        .newSort(
+            "isMono",
+            { arrow: "Edge" },
+            {},
+            (data: any, context: import('./types').D3Context) => {
+                const srcPos = data.arrow.source.position;
+                const tgtPos = data.arrow.target.position;
+                const bend = typeof data.arrow.bend === "number" ? data.arrow.bend : 0;
+                const strokeColor = data.arrow.mono ? "#2c3e50" : "#999";
+                const strokeWidth = typeof data.arrow.width === "number" ? data.arrow.width : 2;
+
+                const dx = tgtPos[0] - srcPos[0];
+                const dy = tgtPos[1] - srcPos[1];
+                const len = Math.sqrt(dx * dx + dy * dy);
+
+                // Perpendicular unit vector (-dy/len, dx/len)
+                const nx = len > 0 ? -dy / len : 0;
+                const ny = len > 0 ? dx / len : 0;
+
+                // Midpoint between source and target
+                const mx = (srcPos[0] + tgtPos[0]) / 2;
+                const my = (srcPos[1] + tgtPos[1]) / 2;
+
+                // Control point for quadratic Bézier curve
+                const cx = mx + bend * nx;
+                const cy = my + bend * ny;
+
+                // Derivative at t=0 to find the initial tangent of the curve
+                // B'(0) = 2 * (cx - srcPos[0]), 2 * (cy - srcPos[1])
+                const tx = cx - srcPos[0];
+                const ty = cy - srcPos[1];
+                const tLen = Math.sqrt(tx * tx + ty * ty);
+                const ux = tLen > 0 ? tx / tLen : 1;
+                const uy = tLen > 0 ? ty / tLen : 0;
+                
+                // Perpendicular to the tangent (for the hook's normal)
+                const px = -uy;
+                const py = ux;
+
+                // Position the hook just outside the vertex circle (r=20)
+                const offset = 22;
+                const startX = srcPos[0] + ux * offset;
+                const startY = srcPos[1] + uy * offset;
+
+                // Calculate the points for the hook path (a semi-circle)
+                // We draw a small arc starting from an offset perpendicular to the line, curving into the line
+                const hookRadius = 5;
+                const hookTipX = startX + px * hookRadius;
+                const hookTipY = startY + py * hookRadius;
+
+                const group = context.append("g");
+
+                // Arc path for the hook: A rx ry x-axis-rotation large-arc-flag sweep-flag x y
+                group.append("path")
+                    .attr("d", `M ${hookTipX},${hookTipY} A ${hookRadius} ${hookRadius} 0 0 1 ${startX},${startY}`)
+                    .attr("fill", "none")
+                    .attr("stroke", strokeColor)
+                    .attr("stroke-width", strokeWidth)
+                    .attr("stroke-linecap", "round");
+
+                return group;
             }
         );
 }
