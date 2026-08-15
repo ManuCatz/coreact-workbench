@@ -40,6 +40,11 @@
   npm run build
   ```
   *(Vite production build; type-checking happens via `npm run check`, not in the build script)*
+- **Regenerate `src/generated/default_sorts.js` from `src/default_sorts.ts`**:
+  ```bash
+  npm run build:sorts
+  ```
+  *(Runs `tsc src/default_sorts.ts --target esnext --moduleResolution node --outDir src/generated`; produces exactly one runnable file. Auto-run via `predev`, `prebuild`, and `pretest`, so you normally never need to call it directly.)*
 - **Preview production build**:
   ```bash
   npm run preview
@@ -68,6 +73,8 @@
 │   │   ├── buildDemo.ts   # Builds the demo diagram + 9 saved rule drawings (incl. 'Rule Drawing Demo')
 │   │   ├── helpers.ts     # Shared demo/test helpers (newDemoContext, registerDefaultSorts)
 │   │   └── *.test.ts      # Vitest suites (rules, consistency, demo, rocq export, rocq compile)
+│   ├── generated/
+│   │   └── default_sorts.js # Gitignored build artifact compiled from src/default_sorts.ts (npm run build:sorts); imported raw by buildDemo
 │   ├── main.ts            # Entry point; mounts App.svelte into #app
 │   ├── ui/
 │   │   ├── store.ts       # All reactive stores + UI actions (single shared module)
@@ -82,8 +89,6 @@
 │   │   ├── Toasts.svelte              # Non-blocking toast notifications
 │   │   └── app.css         # Global styles
 │   └── vite-env.d.ts      # Vite + Svelte TypeScript environment definitions
-├── public/
-│   └── default_sorts.js   # Pre-compiled JS default sorts; imported raw by buildDemo
 ├── index.html             # Minimal mount container (#app) + main.ts entry script
 ├── tsconfig.json          # TypeScript compiler configuration
 ├── svelte.config.js       # Svelte preprocessor config (vitePreprocess)

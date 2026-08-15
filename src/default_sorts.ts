@@ -1,5 +1,16 @@
-declare const sortStore: import('./index').SortStore;
-import type { D3Context } from './types';
+declare const sortStore: SortStore;
+
+type D3Context = import('d3').Selection<SVGGElement, unknown, null, undefined>;
+
+interface SortStore {
+    newSort(
+        name: string,
+        deps: Record<string, string>,
+        dataAttrs: Record<string, string>,
+        draw: (data: any, context: D3Context) => any,
+        initContext?: (context: D3Context) => void
+    ): SortStore;
+}
 
 {
     sortStore

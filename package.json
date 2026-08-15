@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "npm run build:sorts",
     "build": "vite build",
-    "build:sorts": "tsc src/default_sorts.ts --target esnext --moduleResolution node --outDir public",
+    "prebuild": "npm run build:sorts",
+    "build:sorts": "tsc src/default_sorts.ts --target esnext --moduleResolution node --outDir src/generated",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "pretest": "npm run build:sorts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

@@ -5,7 +5,7 @@ import {
     SortStore,
     type Artefact
 } from '../index';
-import defaultSortsCode from '../../public/default_sorts.js?raw';
+import defaultSortsCode from '../generated/default_sorts.js?raw';
 
 export interface DemoContext {
     sortStore: SortStore;
