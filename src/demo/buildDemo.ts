@@ -222,5 +222,13 @@ export function buildDemo(ctx: DemoContext): DemoContext {
     eqMatchRule.setIsRule(true);
     drawingStore.saveDrawing('SharedEdgeTriangles', eqMatchRule);
 
+    // Simple startup drawing: two vertices, one edge between them, one isMono on that edge
+    const simpleMono = new Drawing(sortStore);
+    const smv0 = simpleMono.newArtefact('Vertex', {}, { position: [200, 300], label: 'smv0' }, 'root');
+    const smv1 = simpleMono.newArtefact('Vertex', {}, { position: [600, 300], label: 'smv1' }, 'root');
+    const sme0 = simpleMono.newArtefact('Edge', { source: smv0, target: smv1 }, { width: 4, bend: 0, label: 'sme0' }, 'root');
+    simpleMono.newArtefact('isMono', { arrow: sme0 }, {}, 'root');
+    drawingStore.saveDrawing('SimpleMono', simpleMono);
+
     return ctx;
 }

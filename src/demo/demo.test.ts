@@ -63,7 +63,8 @@ describe('demo drawing store', () => {
             'ComposableEdgesChildEq',
             'ChildEqApply',
             'SecondOrderComp',
-            'SharedEdgeTriangles'
+            'SharedEdgeTriangles',
+            'SimpleMono'
         ];
         for (const name of expectedNames) {
             expect(drawingStore.getDrawing(name)).toBeDefined();

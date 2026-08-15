@@ -5,10 +5,10 @@ import { activeDrawingName, refresh } from './ui/store';
 import App from './ui/App.svelte';
 import './ui/app.css';
 
-// Load the demo drawing as the active drawing (it was saved during the demo
-// initialization in demo.ts) so the canvas starts with the demo content.
-drawingStore.loadDrawing('Rule Drawing Demo', drawing);
-activeDrawingName.set('Rule Drawing Demo');
+// Load the simple mono drawing as the active drawing (it was saved during the
+// demo initialization in demo.ts) so the canvas starts with its content.
+drawingStore.loadDrawing('SimpleMono', drawing);
+activeDrawingName.set('SimpleMono');
 refresh();
 
 const target = document.getElementById('app')!;
