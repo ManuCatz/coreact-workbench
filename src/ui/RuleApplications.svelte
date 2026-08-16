@@ -1,10 +1,10 @@
 <script lang="ts">
     import type { Artefact } from '../index';
     import { get } from 'svelte/store';
-    import { computeRuleApplications, applyRuleAt, mergeMode, ruleHoverArtefacts, version, filterRedundantMatches, toggleFilterRedundantMatches } from './store';
+    import { computeRuleApplications, applyRuleAt, mergeMode, ruleHoverArtefacts, version, filterRedundantMatches, toggleFilterRedundantMatches, filterNoProgressMatches, toggleFilterNoProgressMatches } from './store';
 
     let entries: ReturnType<typeof computeRuleApplications> = [];
-    $: $version, $filterRedundantMatches, entries = computeRuleApplications();
+    $: $version, $filterRedundantMatches, $filterNoProgressMatches, entries = computeRuleApplications();
 
     function matchLabels(entry: (typeof entries)[number], app: (typeof entry.applications)[number]): string[] {
         const ruleDrawing = entry.ruleDrawing;
@@ -51,6 +51,10 @@
         <input type="checkbox" checked={$filterRedundantMatches} onchange={toggleFilterRedundantMatches} />
         Filter redundant matches
     </label>
+    <label class="rule-checkbox-label">
+        <input type="checkbox" checked={$filterNoProgressMatches} onchange={toggleFilterNoProgressMatches} />
+        Filter no-progress matches
+    </label>
 </div>
 
 {#each entries as entry (entry.savedRule.name)}
@@ -87,6 +91,11 @@
     {#if entry.hiddenRedundant > 0}
         <div class="rule-app-hidden-note">
             {entry.hiddenRedundant} redundant match{entry.hiddenRedundant === 1 ? '' : 'es'} hidden
+        </div>
+    {/if}
+    {#if entry.hiddenNoProgress > 0}
+        <div class="rule-app-hidden-note">
+            {entry.hiddenNoProgress} no-progress match{entry.hiddenNoProgress === 1 ? '' : 'es'} hidden
         </div>
     {/if}
 {/each}

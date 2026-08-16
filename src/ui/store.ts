@@ -10,6 +10,7 @@ import {
     applyFirstOrderRule,
     applySecondOrderRule,
     filterRedundantRuleApplications,
+    filterNoProgressRuleApplications,
     type SortDefinition,
     type SavedDrawing,
     type RuleApplication,
@@ -873,6 +874,12 @@ export function toggleFilterRedundantMatches(): void {
     filterRedundantMatches.update(v => !v);
 }
 
+export const filterNoProgressMatches = writable(false);
+
+export function toggleFilterNoProgressMatches(): void {
+    filterNoProgressMatches.update(v => !v);
+}
+
 // ---------------------------------------------------------------------------
 // Applyable rules (computed reactively by RuleApplications.svelte)
 // ---------------------------------------------------------------------------
@@ -882,6 +889,7 @@ export interface RuleAppEntry {
     ruleDrawing: Drawing;
     applications: RuleApplication[];
     hiddenRedundant: number;
+    hiddenNoProgress: number;
 }
 
 export function computeRuleApplications(): RuleAppEntry[] {
@@ -911,7 +919,14 @@ export function computeRuleApplications(): RuleAppEntry[] {
             hiddenRedundant = total - applications.length;
         }
 
-        entries.push({ savedRule, ruleDrawing, applications, hiddenRedundant });
+        let hiddenNoProgress = 0;
+        if (get(filterNoProgressMatches) && applications.length > 0) {
+            const total = applications.length;
+            applications = filterNoProgressRuleApplications(ruleDrawing, drawing, applications);
+            hiddenNoProgress = total - applications.length;
+        }
+
+        entries.push({ savedRule, ruleDrawing, applications, hiddenRedundant, hiddenNoProgress });
     }
     return entries;
 }

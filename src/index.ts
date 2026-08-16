@@ -1748,6 +1748,171 @@ export function filterRedundantRuleApplications(rule: Drawing, host: Drawing, ap
     return filtered;
 }
 
+export function filterNoProgressRuleApplications(rule: Drawing, host: Drawing, applications: RuleApplication[]): RuleApplication[] {
+    const layers = rule.getAllLayers();
+    const rootLayers = layers.filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        return applications;
+    }
+    const ruleRoot = rootLayers[0];
+    const childLayers = layers.filter(l => l.parentId === ruleRoot.id);
+    if (childLayers.length === 0) {
+        return applications;
+    }
+
+    // The conclusion layer is the unique child of the rule root whose artefacts are
+    // re-created in the host root layer when the rule is applied. For first-order rules
+    // this is the single child layer; for second-order rules it is the child layer with
+    // no children of its own (mirroring applySecondOrderRule).
+    const conclusionLayer = childLayers.length === 1
+        ? childLayers[0]
+        : childLayers.find(child => !layers.some(l => l.parentId === child.id));
+    if (!conclusionLayer) {
+        return applications;
+    }
+
+    const patternArts = rule.getArtefacts()
+        .filter(a => a.sortName !== "Equality" && a.layerId === conclusionLayer.id);
+
+    const hostRootLayerIds = host.getAllLayers()
+        .filter(l => l.parentId === null)
+        .map(l => l.id);
+    const hostRootArts = host.getArtefacts().filter(a => hostRootLayerIds.includes(a.layerId));
+
+    const patternSet = new Set<Artefact>(patternArts);
+
+    const conclusionEqualities = rule.getArtefacts()
+        .filter(a => a.sortName === "Equality" && a.layerId === conclusionLayer.id);
+
+    const filtered: RuleApplication[] = [];
+    for (const app of applications) {
+        try {
+            if (applicationMakesProgress(host, ruleRoot, patternArts, patternSet, conclusionEqualities, app, hostRootArts)) {
+                filtered.push(app);
+            }
+        } catch {
+            // If determining progress fails for this application, keep it so it is
+            // not incorrectly hidden.
+            filtered.push(app);
+        }
+    }
+    return filtered;
+}
+
+function applicationMakesProgress(
+    host: Drawing,
+    ruleRoot: Layer,
+    patternArts: Artefact[],
+    patternSet: Set<Artefact>,
+    conclusionEqualities: Artefact[],
+    app: RuleApplication,
+    hostRootArts: Artefact[]
+): boolean {
+    const matchConclusion = (): Map<Artefact, Artefact> | null => {
+        if (patternArts.length === 0) {
+            return new Map();
+        }
+        const ordered = topologicallyOrderPattern(patternArts);
+        if (!ordered) {
+            return null;
+        }
+
+        const assignment = new Map<Artefact, Artefact>();
+        const backtrack = (i: number): boolean => {
+            if (i === ordered.length) {
+                return true;
+            }
+            const a = ordered[i];
+            for (const cand of hostRootArts) {
+                if (cand.sortName !== a.sortName) continue;
+
+                let ok = true;
+                for (const [k, dep] of Object.entries(a.dependencies)) {
+                    const candDep = cand.dependencies[k];
+                    if (candDep === undefined) {
+                        ok = false;
+                        break;
+                    }
+                    let expected: Artefact | undefined;
+                    if (patternSet.has(dep)) {
+                        expected = assignment.get(dep);
+                    } else if (dep.layerId === ruleRoot.id) {
+                        expected = app.matchedArtefacts.get(dep);
+                    } else {
+                        ok = false;
+                        break;
+                    }
+                    if (!expected) {
+                        ok = false;
+                        break;
+                    }
+                    if (candDep !== expected && !host.areEqual(candDep, expected, cand.layerId)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) continue;
+
+                assignment.set(a, cand);
+                if (backtrack(i + 1)) {
+                    return true;
+                }
+                assignment.delete(a);
+            }
+            return false;
+        };
+
+        return backtrack(0) ? assignment : null;
+    };
+
+    // If any conclusion artefact is not already present in the host root layer,
+    // applying the rule adds something new and the match makes progress.
+    const assignment = matchConclusion();
+    if (patternArts.length > 0 && assignment === null) {
+        return true;
+    }
+
+    // All conclusion artefacts are already present; now check that the conclusion's
+    // equality artefacts would not assert anything new. Applying the rule only creates
+    // an equality artefact when it connects at least two distinct (not provably equal)
+    // resolved children.
+    for (const eq of conclusionEqualities) {
+        const resolved: Artefact[] = [];
+        let resolvable = true;
+        for (const child of artefactChildren(eq)) {
+            let img: Artefact | undefined;
+            if (patternSet.has(child)) {
+                img = assignment ? assignment.get(child) : undefined;
+            } else if (child.layerId === ruleRoot.id) {
+                img = app.matchedArtefacts.get(child);
+            }
+            if (!img) {
+                resolvable = false;
+                break;
+            }
+            resolved.push(img);
+        }
+        if (!resolvable) {
+            return true;
+        }
+        const hostRootId = hostRootLayerIdOf(resolved);
+        for (let i = 0; i < resolved.length; i++) {
+            for (let j = i + 1; j < resolved.length; j++) {
+                if (resolved[i] !== resolved[j] && !host.areEqual(resolved[i], resolved[j], hostRootId)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // The whole conclusion is already present in the host root layer.
+    return false;
+}
+
+function hostRootLayerIdOf(artefacts: Artefact[]): string {
+    return artefacts.length > 0 ? artefacts[0].layerId : "root";
+}
+
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
     validateRuleDrawing(rule);
 

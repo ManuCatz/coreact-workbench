@@ -6,7 +6,9 @@ import {
     applyFirstOrderRule,
     applySecondOrderRule,
     filterRedundantRuleApplications,
-    EqualityArtefact
+    filterNoProgressRuleApplications,
+    EqualityArtefact,
+    type Drawing
 } from '../index';
 import {
     makeDrawing,
@@ -265,5 +267,140 @@ describe('redundant match filtering', () => {
 
         const filtered = filterRedundantRuleApplications(rule, host, apps);
         expect(filtered.length).toBe(1);
+    });
+});
+
+describe('no-progress match filtering', () => {
+    function buildTriangleRule(): Drawing {
+        const rule = makeDrawing();
+        const rv0 = makeVertex(rule, 'rv0');
+        const rv1 = makeVertex(rule, 'rv1');
+        const rv2 = makeVertex(rule, 'rv2');
+        makeEdge(rule, 'u', rv0, rv1);
+        makeEdge(rule, 'v', rv1, rv2);
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'w', rv0, rv2, 'conclusion');
+        rule.setIsRule(true);
+        return rule;
+    }
+
+    function buildTriangleHost(withThirdEdge: boolean): Drawing {
+        const host = makeDrawing();
+        const x = makeVertex(host, 'x');
+        const y = makeVertex(host, 'y');
+        const z = makeVertex(host, 'z');
+        const f = makeEdge(host, 'f', x, y);
+        const g = makeEdge(host, 'g', y, z);
+        if (withThirdEdge) {
+            const h = makeEdge(host, 'h', x, z);
+            host.newArtefact('Triangle', { '1': f, '2': g, o: h }, {}, 'root');
+        }
+        return host;
+    }
+
+    it('filters a match whose conclusion edge is already present in the host root layer', () => {
+        const rule = buildTriangleRule();
+        const host = buildTriangleHost(true);
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+
+        const filtered = filterNoProgressRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(0);
+    });
+
+    it('keeps a match whose conclusion edge is genuinely new', () => {
+        const rule = buildTriangleRule();
+        const host = buildTriangleHost(false);
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+
+        const filtered = filterNoProgressRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(1);
+    });
+
+    it('is independent of the redundant-match filter', () => {
+        const rule = makeDrawing();
+        const rv0 = makeVertex(rule, 'a');
+        const rv1 = makeVertex(rule, 'b');
+        makeEdge(rule, 'e', rv0, rv1);
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'f', rv1, rv0, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'x');
+        const hv1 = makeVertex(host, 'y');
+        makeEdge(host, 'he1', hv0, hv1);
+        makeEdge(host, 'he2', hv0, hv1);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(2);
+
+        const filtered = filterNoProgressRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(2);
+    });
+
+    it('filters all matches of a rule with an empty conclusion layer', () => {
+        const rule = makeDrawing();
+        makeVertex(rule, 'a');
+        makeVertex(rule, 'b');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'x');
+        const hv1 = makeVertex(host, 'y');
+        makeEdge(host, 'he1', hv0, hv1);
+        makeEdge(host, 'he2', hv0, hv1);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(2);
+
+        const filtered = filterNoProgressRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(0);
+    });
+
+    it('treats a conclusion equality that asserts something new as progress', () => {
+        const rule = makeDrawing();
+        const rv0 = makeVertex(rule, 'a');
+        const rv1 = makeVertex(rule, 'b');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'f', rv0, rv1, 'conclusion');
+        rule.newEqualityArtefact([rv0, rv1], 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'x');
+        const hv1 = makeVertex(host, 'y');
+        makeEdge(host, 'he1', hv0, hv1);
+        makeEdge(host, 'he2', hv1, hv0);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(2);
+
+        const filtered = filterNoProgressRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(2);
+    });
+
+    it('filters a conclusion equality that is already provable in the host', () => {
+        const rule = makeDrawing();
+        const rv0 = makeVertex(rule, 'a');
+        const rv1 = makeVertex(rule, 'b');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'f', rv0, rv1, 'conclusion');
+        rule.newEqualityArtefact([rv0, rv1], 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'x');
+        const hv1 = makeVertex(host, 'y');
+        makeEdge(host, 'he1', hv0, hv1);
+        host.newEqualityArtefact([hv0, hv1], 'root');
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+
+        const filtered = filterNoProgressRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(0);
     });
 });
