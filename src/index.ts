@@ -1643,6 +1643,111 @@ function findRootRuleApplications(rule: Drawing, host: Drawing): RuleApplication
     return findRuleApplicationsInternal(host, rootArts, extractEqualityConstraints(rule));
 }
 
+export function filterRedundantRuleApplications(rule: Drawing, host: Drawing, applications: RuleApplication[]): RuleApplication[] {
+    const layers = rule.getAllLayers();
+    const rootLayers = layers.filter(l => l.parentId === null);
+    if (rootLayers.length !== 1) {
+        return applications;
+    }
+    const ruleRoot = rootLayers[0];
+    const effectArts = rule.getArtefacts().filter(a => a.layerId !== ruleRoot.id);
+    if (effectArts.length === 0) {
+        return applications.length > 0 ? [applications[0]] : [];
+    }
+
+    const effectLayers = layers.filter(l => l.parentId !== null);
+    const hostRoots = host.getAllLayers().filter(l => l.parentId === null);
+
+    const seenKeys = new Set<string>();
+    const filtered: RuleApplication[] = [];
+
+    // Assign a consistent unique identifier to each host artefact object within this call
+    const hostIdMap = new WeakMap<Artefact, number>();
+    let nextHostId = 0;
+    const getHostKey = (art: Artefact) => {
+        let id = hostIdMap.get(art);
+        if (id === undefined) {
+            id = nextHostId++;
+            hostIdMap.set(art, id);
+        }
+        return `H${id}`;
+    };
+
+    for (const app of applications) {
+        try {
+            const memo = new Map<Artefact, string>();
+            const resolve = (a: Artefact): string | null => {
+                if (a.layerId === ruleRoot.id) {
+                    const img = app.matchedArtefacts.get(a);
+                    return img ? getHostKey(img) : null;
+                }
+                const cached = memo.get(a);
+                if (cached !== undefined) return cached;
+
+                if (a instanceof EqualityArtefact) {
+                    const childKeys: string[] = [];
+                    for (const child of a.children) {
+                        const ck = resolve(child);
+                        if (ck !== null) childKeys.push(ck);
+                    }
+                    const unique = Array.from(new Set(childKeys));
+                    if (unique.length < 2) {
+                        memo.set(a, "\u0000SKIP");
+                        return null;
+                    }
+                    unique.sort();
+                    const key = `E|${JSON.stringify(a.data)}|[${unique.join(",")}]`;
+                    memo.set(a, key);
+                    return key;
+                }
+
+                const resolvedDeps: string[] = [];
+                // Sort dependency keys for deterministic serialization
+                const depEntries = Object.entries(a.dependencies).sort((x, y) => x[0].localeCompare(y[0]));
+                for (const [k, dep] of depEntries) {
+                    const dk = resolve(dep);
+                    resolvedDeps.push(`${k}=${dk ?? "?"}`);
+                }
+
+                const key = `${a.sortName}|${JSON.stringify(a.data)}|[${resolvedDeps.join(",")}]`;
+                memo.set(a, key);
+                return key;
+            };
+
+            const layerKeys: string[] = [];
+            for (const layer of effectLayers) {
+                const layerArts = rule.getArtefacts().filter(a => a.layerId === layer.id && a.sortName !== "Equality");
+                // The resolved host root target for this layer
+                const hostRootId = resolveHostRootId(ruleRoot, layerArts, app.matchedArtefacts, hostRoots);
+
+                const artsInLayer = effectArts.filter(a => a.layerId === layer.id);
+                const artKeys: string[] = [];
+                for (const a of artsInLayer) {
+                    const ak = resolve(a);
+                    if (ak !== null && ak !== "\u0000SKIP") {
+                        artKeys.push(ak);
+                    }
+                }
+                artKeys.sort();
+                layerKeys.push(`L[${hostRootId}]{${artKeys.join(";")}}`);
+            }
+            layerKeys.sort();
+            const effectKey = layerKeys.join("||");
+
+            if (!seenKeys.has(effectKey)) {
+                seenKeys.add(effectKey);
+                filtered.push(app);
+            }
+        } catch {
+            // If resolution (e.g. resolveHostRootId throwing) fails for this application,
+            // treat it as unique so it passes through without being incorrectly hidden.
+            filtered.push(app);
+        }
+    }
+
+    return filtered;
+}
+
 export function findRuleApplications(rule: Drawing, host: Drawing): RuleApplication[] {
     validateRuleDrawing(rule);
 

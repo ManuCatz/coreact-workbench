@@ -9,6 +9,7 @@ import {
     findSecondOrderRuleApplications,
     applyFirstOrderRule,
     applySecondOrderRule,
+    filterRedundantRuleApplications,
     type SortDefinition,
     type SavedDrawing,
     type RuleApplication,
@@ -866,6 +867,12 @@ export function checkLayerProvable(layerId: string): void {
     }
 }
 
+export const filterRedundantMatches = writable(false);
+
+export function toggleFilterRedundantMatches(): void {
+    filterRedundantMatches.update(v => !v);
+}
+
 // ---------------------------------------------------------------------------
 // Applyable rules (computed reactively by RuleApplications.svelte)
 // ---------------------------------------------------------------------------
@@ -874,6 +881,7 @@ export interface RuleAppEntry {
     savedRule: SavedDrawing;
     ruleDrawing: Drawing;
     applications: RuleApplication[];
+    hiddenRedundant: number;
 }
 
 export function computeRuleApplications(): RuleAppEntry[] {
@@ -895,7 +903,15 @@ export function computeRuleApplications(): RuleAppEntry[] {
         } catch {
             continue;
         }
-        entries.push({ savedRule, ruleDrawing, applications });
+        
+        let hiddenRedundant = 0;
+        if (get(filterRedundantMatches) && applications.length > 1) {
+            const total = applications.length;
+            applications = filterRedundantRuleApplications(ruleDrawing, drawing, applications);
+            hiddenRedundant = total - applications.length;
+        }
+
+        entries.push({ savedRule, ruleDrawing, applications, hiddenRedundant });
     }
     return entries;
 }

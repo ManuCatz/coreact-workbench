@@ -58,7 +58,13 @@ Root-layer equality artefacts express that their children are provably equal in 
 4. **Final check**: once a complete assignment is found, every applicable equality constraint must hold — the assigned images must be pairwise equal via `host.areEqual`.
 5. **Deduplication**: two applications are considered equivalent when every pattern artefact maps to the same host artefact or to host artefacts that are provably equal (`applicationsEquivalent`). Only one representative of each equivalence class is returned.
 
-### 2.3 `areEqual` — provable equality in the host
+### 2.3 Redundancy Filtering
+
+The user interface includes a "Filter redundant matches" option that uses `filterRedundantRuleApplications` to further deduplicate matches based on their *effect* on the host drawing. 
+
+Two matches are redundant if applying the rule produces the exact same host state (e.g. if the rule creates an edge between two matched vertices, and two distinct matches map to the exact same pair of host vertices but differ only on a matched edge that the conclusion never references). The filter simulates `applyRuleConclusion` structurally to generate a canonical string effect key using host-artefact identities, removing functionally identical duplicates.
+
+### 2.4 `areEqual` — provable equality in the host
 
 `Drawing.areEqual(a, b, layerId)` decides whether `a` and `b` are **provably equal** at a given layer:
 

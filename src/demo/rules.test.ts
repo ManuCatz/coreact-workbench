@@ -5,6 +5,7 @@ import {
     findSecondOrderRuleApplications,
     applyFirstOrderRule,
     applySecondOrderRule,
+    filterRedundantRuleApplications,
     EqualityArtefact
 } from '../index';
 import {
@@ -201,5 +202,68 @@ describe('matching up to host equalities', () => {
         expect(findRuleApplications(rule, hostShared).length).toBe(2);
         expect(findRuleApplications(rule, hostEqualEdges).length).toBe(2);
         expect(findRuleApplications(rule, hostDistinctEdges).length).toBe(0);
+    });
+});
+
+describe('redundant match filtering', () => {
+    it('filters matches that produce identical host conclusion artefacts (e.g., conclusion only references vertices)', () => {
+        const rule = makeDrawing();
+        const rv0 = makeVertex(rule, 'a');
+        const rv1 = makeVertex(rule, 'b');
+        makeEdge(rule, 'e', rv0, rv1);
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'f', rv1, rv0, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'x');
+        const hv1 = makeVertex(host, 'y');
+        makeEdge(host, 'he1', hv0, hv1);
+        makeEdge(host, 'he2', hv0, hv1);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(2);
+
+        const filtered = filterRedundantRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(1);
+    });
+
+    it('keeps matches that produce distinct host artefacts (e.g., conclusion wraps the matched edge)', () => {
+        const rule = makeDrawing();
+        const rv0 = makeVertex(rule, 'a');
+        const rv1 = makeVertex(rule, 'b');
+        const re1 = makeEdge(rule, 'e', rv0, rv1);
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        rule.newArtefact('isMono', { arrow: re1 }, {}, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const hv0 = makeVertex(host, 'x');
+        const hv1 = makeVertex(host, 'y');
+        makeEdge(host, 'he1', hv0, hv1);
+        makeEdge(host, 'he2', hv0, hv1);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(2);
+
+        const filtered = filterRedundantRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(2);
+    });
+
+    it('handles empty effect gracefully', () => {
+        const rule = makeDrawing();
+        makeVertex(rule, 'a');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        makeVertex(host, 'x');
+        makeVertex(host, 'y');
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(2);
+
+        const filtered = filterRedundantRuleApplications(rule, host, apps);
+        expect(filtered.length).toBe(1);
     });
 });

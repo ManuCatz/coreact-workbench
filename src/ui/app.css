@@ -59,6 +59,20 @@ body {
     color: #555;
     display: inline-flex;
 }
+.rules-filter {
+    padding: 8px 10px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #eee;
+    margin: -10px -15px 10px -15px;
+}
+.rule-app-hidden-note {
+    font-size: 0.75rem;
+    color: #888;
+    text-align: center;
+    margin-top: 4px;
+    margin-bottom: 8px;
+    font-style: italic;
+}
 .rule-app-row {
     position: relative;
     padding: 4px 6px;

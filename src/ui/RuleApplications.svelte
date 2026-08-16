@@ -1,10 +1,10 @@
 <script lang="ts">
     import type { Artefact } from '../index';
     import { get } from 'svelte/store';
-    import { computeRuleApplications, applyRuleAt, mergeMode, ruleHoverArtefacts, version } from './store';
+    import { computeRuleApplications, applyRuleAt, mergeMode, ruleHoverArtefacts, version, filterRedundantMatches, toggleFilterRedundantMatches } from './store';
 
     let entries: ReturnType<typeof computeRuleApplications> = [];
-    $: $version, entries = computeRuleApplications();
+    $: $version, $filterRedundantMatches, entries = computeRuleApplications();
 
     function matchLabels(entry: (typeof entries)[number], app: (typeof entry.applications)[number]): string[] {
         const ruleDrawing = entry.ruleDrawing;
@@ -46,6 +46,13 @@
     }
 </script>
 
+<div class="rules-filter">
+    <label class="rule-checkbox-label">
+        <input type="checkbox" checked={$filterRedundantMatches} onchange={toggleFilterRedundantMatches} />
+        Filter redundant matches
+    </label>
+</div>
+
 {#each entries as entry (entry.savedRule.name)}
     {#each entry.applications as app, index (entry.savedRule.name + '-' + index)}
         {@const savedRule = entry.savedRule}
@@ -77,4 +84,9 @@
             >Apply</button>
         </div>
     {/each}
+    {#if entry.hiddenRedundant > 0}
+        <div class="rule-app-hidden-note">
+            {entry.hiddenRedundant} redundant match{entry.hiddenRedundant === 1 ? '' : 'es'} hidden
+        </div>
+    {/if}
 {/each}
