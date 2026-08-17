@@ -1,9 +1,26 @@
 import type { D3Context } from './types';
 
+export interface SliderAttribute {
+    type: "slider";
+    min: number;
+    max: number;
+    default: number;
+}
+
+export type AttributeType = "number" | "string" | "boolean" | "position" | SliderAttribute;
+
+export function getAttributeType(at: AttributeType): string {
+    return typeof at === "string" ? at : at.type;
+}
+
+export function getSliderMeta(at: AttributeType): SliderAttribute | null {
+    return typeof at !== "string" && at.type === "slider" ? at : null;
+}
+
 export interface SortDefinition {
     name: string;
     dependencies: Record<string, string>;
-    attributes: Record<string, string>;
+    attributes: Record<string, AttributeType>;
     drawFunction: (data: any, context: D3Context) => D3Context | null; // Now returns the element
     initContext?: (context: D3Context) => void;
 }
@@ -42,7 +59,7 @@ export class SortStore {
     newSort(
         name: string,
         dependencies: Record<string, string>,
-        attributes: Record<string, string>,
+        attributes: Record<string, AttributeType>,
         drawFunction: (data: any, context: D3Context) => D3Context | null,
         initContext?: (context: D3Context) => void
     ): this {
@@ -53,11 +70,18 @@ export class SortStore {
             }
         }
 
-        // Validate attribute types (basic check to ensure they are strings representing types)
-        const validTypes = ["number", "string", "boolean", "position"];
+        // Validate attribute types
+        const validTypeNames = ["number", "string", "boolean", "position", "slider"];
         for (const [attrName, attrType] of Object.entries(attributes)) {
-            if (!validTypes.includes(attrType)) {
-                throw new Error(`Consistency Check Failed: Invalid attribute type '${attrType}' for attribute '${attrName}' in sort '${name}'.`);
+            const typeName = getAttributeType(attrType);
+            if (!validTypeNames.includes(typeName)) {
+                throw new Error(`Consistency Check Failed: Invalid attribute type '${typeName}' for attribute '${attrName}' in sort '${name}'.`);
+            }
+            if (typeName === "slider") {
+                const meta = getSliderMeta(attrType);
+                if (!meta || typeof meta.min !== "number" || typeof meta.max !== "number" || typeof meta.default !== "number") {
+                    throw new Error(`Consistency Check Failed: Slider attribute '${attrName}' in sort '${name}' must have numeric min, max, and default.`);
+                }
             }
         }
 
@@ -813,19 +837,21 @@ export class Drawing {
         }
 
         // 2. Validate Data Attributes (Strict Check)
-        for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
+        for (const [attrName, attrType] of Object.entries(sortDef.attributes)) {
             const value = data[attrName];
             if (value === undefined) {
                 throw new Error(`Consistency Check Failed: Missing data attribute '${attrName}' for artefact of sort '${sortName}'.`);
             }
 
             // Primitive type checking
-            if (expectedType === "position") {
+            const typeName = getAttributeType(attrType);
+            const expectedJsType = typeName === "slider" ? "number" : typeName;
+            if (expectedJsType === "position") {
                 if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== "number" || typeof value[1] !== "number") {
                     throw new Error(`Consistency Check Failed: Data attribute '${attrName}' expected to be of primitive type 'position' ([number, number]), but got ${JSON.stringify(value)}.`);
                 }
-            } else if (typeof value !== expectedType) {
-                throw new Error(`Consistency Check Failed: Data attribute '${attrName}' expected to be '${expectedType}', but got '${typeof value}'.`);
+            } else if (typeof value !== expectedJsType) {
+                throw new Error(`Consistency Check Failed: Data attribute '${attrName}' expected to be '${typeName}', but got '${typeof value}'.`);
             }
         }
 

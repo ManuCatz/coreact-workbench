@@ -14,7 +14,9 @@ import {
     type SortDefinition,
     type SavedDrawing,
     type RuleApplication,
-    type DataAttributeValue
+    type DataAttributeValue,
+    getAttributeType,
+    getSliderMeta
 } from '../index';
 import { RocqRecorder } from '../rocq_recording';
 import { exportDrawingsToRocq, drawingExportNames } from '../rocq_export';
@@ -150,7 +152,7 @@ export function applyPickedPosition(x: number, y: number): void {
 
 export function getSinglePositionAttr(sortDef: SortDefinition): string | null {
     const positionAttrs = Object.entries(sortDef.attributes)
-        .filter(([_, type]) => type === 'position')
+        .filter(([_, type]) => getAttributeType(type) === 'position')
         .map(([name]) => name);
     return positionAttrs.length === 1 ? positionAttrs[0] : null;
 }
@@ -212,14 +214,18 @@ export function startDraftForSort(sortDef: SortDefinition): void {
     cancelMergeMode();
 
     const initialData: Record<string, DataAttributeValue> = {};
-    for (const [attrName, expectedType] of Object.entries(sortDef.attributes)) {
-        if (expectedType === 'position') {
+    for (const [attrName, attrType] of Object.entries(sortDef.attributes)) {
+        const typeName = getAttributeType(attrType);
+        if (typeName === 'position') {
             initialData[attrName] = [300, 300];
-        } else if (expectedType === 'number') {
+        } else if (typeName === 'slider') {
+            const meta = getSliderMeta(attrType);
+            initialData[attrName] = meta ? meta.default : 0;
+        } else if (typeName === 'number') {
             initialData[attrName] = attrName === 'bend' ? 0 : 2;
-        } else if (expectedType === 'boolean') {
+        } else if (typeName === 'boolean') {
             initialData[attrName] = false;
-        } else if (expectedType === 'string') {
+        } else if (typeName === 'string') {
             initialData[attrName] = '';
         }
     }

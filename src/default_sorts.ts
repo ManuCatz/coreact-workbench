@@ -6,7 +6,7 @@ interface SortStore {
     newSort(
         name: string,
         deps: Record<string, string>,
-        dataAttrs: Record<string, string>,
+        dataAttrs: Record<string, string | { type: string; min: number; max: number; default: number }>,
         draw: (data: any, context: D3Context) => any,
         initContext?: (context: D3Context) => void
     ): SortStore;
@@ -55,7 +55,7 @@ function hookStartOffset(width: number): number {
         .newSort(
             "Edge",
             { source: "Vertex", target: "Vertex" }, // Dependencies 
-            { width: "number", bend: "number" },
+            { width: "number", bend: { type: "slider", min: -500, max: 500, default: 0 } },
             (data: any, context: import('./types').D3Context) => {
                 const srcPos = data.source.position;
                 const tgtPos = data.target.position;
