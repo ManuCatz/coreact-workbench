@@ -2013,6 +2013,22 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
 
     const match = application.matchedArtefacts;
 
+    // Build label substitution map: rule root artefact label -> host artefact label
+    const labelMap = new Map<string, string>();
+    for (const [ruleArt, hostArt] of match) {
+        const rl = typeof ruleArt.data.label === "string" ? ruleArt.data.label : "";
+        const hl = typeof hostArt.data.label === "string" ? hostArt.data.label : "";
+        if (rl) labelMap.set(rl, hl);
+    }
+
+    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const substituteLabel = (label: string): string => {
+        if (labelMap.size === 0 || !label.includes("$")) return label;
+        const sorted = [...labelMap.keys()].sort((a, b) => b.length - a.length);
+        const pattern = sorted.map(k => `\\$${escapeRegExp(k)}`).join("|");
+        return label.replace(new RegExp(pattern, "g"), m => labelMap.get(m.slice(1)) ?? m);
+    };
+
     const hostRoots = host.getAllLayers().filter(l => l.parentId === null);
     if (hostRoots.length === 0) {
         throw new Error("Consistency Check Failed: Host drawing has no root layer to add artefacts to.");
@@ -2062,7 +2078,11 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
             }
         }
 
-        const newArt = host.newArtefact(a.sortName, newDeps, JSON.parse(JSON.stringify(a.data)), hostRootId);
+        const copiedData = JSON.parse(JSON.stringify(a.data));
+        if (typeof copiedData.label === "string") {
+            copiedData.label = substituteLabel(copiedData.label);
+        }
+        const newArt = host.newArtefact(a.sortName, newDeps, copiedData, hostRootId);
         created.set(a, newArt);
         result.push(newArt);
     }
@@ -2091,7 +2111,11 @@ function applyRuleConclusion(rule: Drawing, host: Drawing, application: RuleAppl
 
         const uniqueChildren = Array.from(new Set(resolvedChildren));
         if (uniqueChildren.length >= 2) {
-            const newEq = host.addEqualityArtefactUnchecked(uniqueChildren, hostRootId, JSON.parse(JSON.stringify(eq.data)));
+            const eqData = JSON.parse(JSON.stringify(eq.data));
+            if (typeof eqData.label === "string") {
+                eqData.label = substituteLabel(eqData.label);
+            }
+            const newEq = host.addEqualityArtefactUnchecked(uniqueChildren, hostRootId, eqData);
             created.set(eq, newEq);
             result.push(newEq);
         }

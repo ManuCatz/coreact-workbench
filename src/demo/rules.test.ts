@@ -404,3 +404,96 @@ describe('no-progress match filtering', () => {
         expect(filtered.length).toBe(0);
     });
 });
+
+describe('label substitution in rule conclusion', () => {
+    it('replaces $-prefixed root artefact names with matched host names', () => {
+        const rule = makeDrawing();
+        const rx = makeVertex(rule, 'x');
+        const ry = makeVertex(rule, 'y');
+        makeEdge(rule, 'e1', rx, ry, 'root');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, '$x -> $y', rx, ry, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const ha = makeVertex(host, 'a');
+        const hb = makeVertex(host, 'b');
+        makeEdge(host, 'he1', ha, hb);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        expect(apps.length).toBe(1);
+        applyFirstOrderRule(rule, host, apps[0]);
+
+        const edges = host.getArtefacts().filter(a => a.sortName === 'Edge');
+        expect(edges.length).toBe(2);
+        const conclusionEdge = edges.find(e => e.data.label?.includes('->'));
+        expect(conclusionEdge).toBeDefined();
+        expect(conclusionEdge!.data.label).toBe('a -> b');
+    });
+
+    it('leaves labels without $ references unchanged', () => {
+        const rule = makeDrawing();
+        const rx = makeVertex(rule, 'x');
+        const ry = makeVertex(rule, 'y');
+        makeEdge(rule, 'e1', rx, ry, 'root');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, 'compose', rx, ry, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const ha = makeVertex(host, 'a');
+        const hb = makeVertex(host, 'b');
+        makeEdge(host, 'he1', ha, hb);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        applyFirstOrderRule(rule, host, apps[0]);
+
+        const edges = host.getArtefacts().filter(a => a.sortName === 'Edge');
+        expect(edges.length).toBe(2);
+        const conclusionEdge = edges.find(e => e.data.label === 'compose');
+        expect(conclusionEdge).toBeDefined();
+    });
+
+    it('leaves $-references unmatched by any root artefact unchanged', () => {
+        const rule = makeDrawing();
+        const rx = makeVertex(rule, 'x');
+        const ry = makeVertex(rule, 'y');
+        makeEdge(rule, 'e1', rx, ry, 'root');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        makeEdge(rule, '$x compose $unknown', rx, ry, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        const ha = makeVertex(host, 'a');
+        const hb = makeVertex(host, 'b');
+        makeEdge(host, 'he1', ha, hb);
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        applyFirstOrderRule(rule, host, apps[0]);
+
+        const edges = host.getArtefacts().filter(a => a.sortName === 'Edge');
+        expect(edges.length).toBe(2);
+        const conclusionEdge = edges.find(e => e.data.label?.includes('compose'));
+        expect(conclusionEdge).toBeDefined();
+        expect(conclusionEdge!.data.label).toBe('a compose $unknown');
+    });
+
+    it('substitutes labels on non-edge conclusion artefacts too', () => {
+        const rule = makeDrawing();
+        makeVertex(rule, 'x');
+        rule.addLayer('conclusion', 'Conclusion', 'root');
+        rule.newArtefact('Vertex', {}, { position: [0, 0], label: 'copy of $x' }, 'conclusion');
+        rule.setIsRule(true);
+
+        const host = makeDrawing();
+        makeVertex(host, 'p');
+
+        const apps = findFirstOrderRuleApplications(rule, host);
+        applyFirstOrderRule(rule, host, apps[0]);
+
+        const vertices = host.getArtefacts().filter(a => a.sortName === 'Vertex');
+        expect(vertices.length).toBe(2);
+        const newVertex = vertices.find(v => v.data.label === 'copy of p');
+        expect(newVertex).toBeDefined();
+    });
+});

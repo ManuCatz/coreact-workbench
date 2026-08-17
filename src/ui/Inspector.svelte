@@ -10,7 +10,8 @@
         draftArtefact,
         dependencyPickingFor,
         inspectedArtefact,
-        version
+        version,
+        ruleTag
     } from './store';
     import {
         cancelMergeMode,
@@ -278,6 +279,11 @@
                     onchange={(e) => setDraftDataField('label', (e.currentTarget as HTMLInputElement).value)}
                 />
             </div>
+            {#if $ruleTag}
+                <p style="color: #888; font-style: italic; font-size: 0.78rem; margin: 2px 0 0 0;">
+                    Use $name to reference root artefact labels when applying rules (e.g. $x → $y)
+                </p>
+            {/if}
 
             <DataAttributeFields
                 prefix="draft"
@@ -350,6 +356,11 @@
                     onchange={(e) => setInspectedLabel(art, (e.currentTarget as HTMLInputElement).value)}
                 />
             </div>
+            {#if $ruleTag}
+                <p style="color: #888; font-style: italic; font-size: 0.78rem; margin: 2px 0 0 0;">
+                    Use $name to reference root artefact labels when applying rules (e.g. $x → $y)
+                </p>
+            {/if}
 
             <DataAttributeFields
                 prefix="inspect"
